@@ -1,0 +1,55 @@
+services:
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: everdeliver-kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      # These 4 variables fix the "Process Roles" and "KRaft" errors
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:29093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      
+      # Networking logic for Mac -> Docker
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,INTERNAL://0.0.0.0:29092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,INTERNAL://kafka:29092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT'
+      
+      # Required KRaft Metadata
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Randomly generated UUID for the cluster
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
+  everdeliver-api:
+    build:
+      context: .
+      dockerfile: everdeliver-api/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      - kafka
+
+  everdeliver-worker:
+    build:
+      context: .
+      dockerfile: everdeliver-worker/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_MAIL_HOST: mailpit
+    depends_on:
+      - kafka
+      - mailpit
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: everdeliver-mailpit-1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
