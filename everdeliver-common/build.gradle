@@ -1,0 +1,12 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+}
+
+dependencies {
+    // This module is just for POJOs/DTOs
+    implementation 'org.springframework.boot:spring-boot-starter'
+}
+
+bootJar { enabled = false }
+jar { enabled = true }

@@ -1,0 +1,5 @@
+rootProject.name = 'EverDeliver'
+
+include 'everdeliver-api'
+include 'everdeliver-worker'
+include 'everdeliver-common'

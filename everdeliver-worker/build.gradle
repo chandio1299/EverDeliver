@@ -1,0 +1,10 @@
+plugins {
+    id 'org.springframework.boot'
+}
+
+dependencies {
+    implementation project(':everdeliver-common')
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-web' // For Actuator/Health checks
+    implementation 'org.springframework.kafka:spring-kafka'
+}
