@@ -1,0 +1,39 @@
+---
+description: EverDeliver SPEC gates — stop and confirm architecture before coding any phase
+alwaysApply: true
+---
+
+# EverDeliver — SPEC & architecture gates
+
+## Source of truth
+
+- Product phases and decision checkboxes: `docs/SPEC.md`
+- Topology / modules: `docs/ARCHITECTURE.md`
+- Entities: `docs/DATA_MODEL.md`
+- Locked decisions: `docs/ADR/`
+- Secrets: `docs/SECURITY.md`
+- Agent overview: `AGENTS.md`
+
+## Mandatory workflow
+
+When the user asks to implement a feature or phase:
+
+1. Identify the SPEC phase.
+2. List every unchecked **Architecture Decisions (MUST CONFIRM BEFORE IMPLEMENTING)** item.
+3. Ask the user to confirm each decision. **Do not write application code until confirmed.**
+4. After confirmation, record an ADR under `docs/ADR/` (copy `0000-template.md`) and update related docs if topology/schema changed.
+5. Implement only that phase. Do not start the next phase unless the user explicitly asks.
+
+## Locked choices (do not reopen unless user asks)
+
+- Product Model A: dashboard login + paste SendGrid/Twilio keys (real delivery).
+- No Gmail OAuth for v1.
+- Email: SendGrid when configured; Mailpit local default.
+- SMS/WhatsApp: Twilio.
+- Slack v1 preference: Incoming Webhook.
+
+## Forbidden without explicit approval
+
+- Inventing DB schemas, Kafka topic layouts, or new modules not confirmed in SPEC/ADR
+- Committing or logging secrets
+- Skipping DLQ/retry semantics when touching delivery failure paths in Phase 2+
