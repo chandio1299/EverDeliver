@@ -6,13 +6,13 @@ EverDeliver is a resilient, event-driven notification engine built with Java 21,
 
 The project is structured as a Gradle Multi-Module project to maintain a clean separation of concerns:
 
-- **everdeliver-api** (Producer): A RESTful entry point that validates notification requests and asynchronously publishes them to Kafka.
+- **everdeliver-api** (Producer): A RESTful entry point that persists notifications as `QUEUED`, publishes them to Kafka, and serves status APIs.
+- **everdeliver-worker** (Consumer): A background service that consumes messages from Kafka, updates delivery status in Postgres, and sends email via SMTP.
+- **everdeliver-persistence**: Shared JPA entity, repository, and Flyway migrations.
+- **everdeliver-common**: Shared DTOs used by API and worker (Kafka payload).
+- **Infrastructure**: Docker Compose — Kafka (KRaft), PostgreSQL, Mailpit, API, Worker.
 
-- **everdeliver-worker** (Consumer): A background service that consumes messages from Kafka and executes the delivery logic via SMTP.
-
-- **everdeliver-common**: A shared library containing core Data Transfer Objects (DTOs) and utilities used by both services.
-
-- **Infrastructure**: Orchestrated via Docker, featuring Kafka (KRaft mode) and Mailpit for local SMTP testing.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC.md](docs/SPEC.md).
 
 ## 🛠 Tech Stack
 
@@ -20,54 +20,43 @@ The project is structured as a Gradle Multi-Module project to maintain a clean s
 - **Framework**: Spring Boot 3.x
 - **Build Tool**: Gradle (Wrapper)
 - **Messaging**: Apache Kafka (KRaft mode - no Zookeeper required)
+- **Database**: PostgreSQL 16 + Spring Data JPA + Flyway
 - **Infrastructure**: Docker & Docker Compose
 - **Testing/Mocking**: Mailpit (Mock SMTP Server)
 - **Base Image**: Eclipse Temurin JDK/JRE 21
 
 ## 🚀 Quick Start with Docker
 
-The easiest way to run the entire stack is using Docker Compose. This approach builds and runs all services in isolated containers:
-
 ```bash
 docker compose up --build
 ```
 
 This single command will:
-- Build the `everdeliver-api` service (Port 8081)
-- Build the `everdeliver-worker` service (Port 8082)
-- Start Kafka broker with KRaft mode (Port 9092)
-- Start Mailpit for email testing (Ports 1025 & 8025)
+- Build `everdeliver-api` (Port 8081) and `everdeliver-worker` (Port 8082)
+- Start Kafka (Port 9092), PostgreSQL (Port 5432), Mailpit (Ports 1025 & 8025)
 
 Wait for all services to be healthy (~2-3 minutes on first run).
 
 ## 🚦 Getting Started (Local Development)
 
-If you prefer running services locally outside Docker:
-
 ### Prerequisites
 
-- Docker Desktop (for Kafka & Mailpit)
+- Docker Desktop (for Kafka, Postgres & Mailpit)
 - Java 21 (managed via SDKMAN! recommended)
 
 ### 1. Start Infrastructure Only
 
-Launch just Kafka and Mailpit:
-
 ```bash
-docker compose up kafka mailpit -d
+docker compose up kafka mailpit postgres -d
 ```
 
 ### 2. Build the Project
-
-Use the Gradle wrapper to compile all modules:
 
 ```bash
 ./gradlew clean build
 ```
 
 ### 3. Run the Services Locally
-
-Open two terminal tabs and start the services:
 
 **Tab 1 (API):**
 
@@ -81,42 +70,56 @@ Open two terminal tabs and start the services:
 ./gradlew :everdeliver-worker:bootRun
 ```
 
-## 🧪 Testing the Flow
+## 🧪 Testing the Flow (Phase 1)
 
-### Trigger a Notification:
-
-Send a POST request to the API:
+### Enqueue a notification
 
 ```bash
-curl -X POST http://localhost:8081/api/v1/notifications \
--H "Content-Type: application/json" \
--d '{
-  "email": "user@example.com",
-  "subject": "Hello EverDeliver",
-  "message": "This message traveled through Kafka!"
-}'
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "subject": "Hello EverDeliver",
+    "message": "This message traveled through Kafka!"
+  }'
 ```
 
-### Verify via Mailpit:
+Expect JSON like `{"id":"<uuid>","status":"QUEUED"}`.
 
-Open your browser and navigate to http://localhost:8025. You should see the delivered email in the mock inbox.
+### Check status
+
+```bash
+curl -s http://localhost:8081/api/v1/notifications/<id>
+curl -s 'http://localhost:8081/api/v1/notifications?status=SENT&limit=10'
+```
+
+### Verify via Mailpit
+
+Open http://localhost:8025 — you should see the delivered email.
+
+### Optional: inspect Postgres
+
+```bash
+docker compose exec postgres psql -U everdeliver -c 'select id, status from notifications;'
+```
 
 ## 📦 Docker Architecture
 
 ### Multi-Stage Builds
 
-Each service uses a two-stage Dockerfile for optimal image size:
+Each service uses a two-stage Dockerfile:
 
-1. **Build Stage**: Uses `eclipse-temurin:21-jdk` to compile the Gradle project
-2. **Runtime Stage**: Uses `eclipse-temurin:21-jre` to run the packaged JAR
+1. **Build Stage**: `eclipse-temurin:21-jdk` compiles the Gradle project
+2. **Runtime Stage**: `eclipse-temurin:21-jre` runs the packaged JAR
 
 ### Service Communication
 
 Inside Docker, services communicate via container names:
-- **Kafka**: `kafka:29092` (internal network)
-- **Mailpit**: `mailpit:1025` (SMTP server)
+- **Kafka**: `kafka:29092`
+- **Postgres**: `postgres:5432`
+- **Mailpit**: `mailpit:1025`
 
-External access (localhost) uses ports: 9092 (Kafka), 8025 (Mailpit UI)
+External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI)
 
 ## 🛣 Roadmap
 
@@ -124,7 +127,7 @@ External access (localhost) uses ports: 9092 (Kafka), 8025 (Mailpit UI)
 - [x] E2E API-to-Worker Flow
 - [x] Docker containerization with multi-stage builds
 - [x] KRaft mode Kafka (no Zookeeper)
+- [x] Message Persistence & Status Tracking (Phase 1)
 - [ ] Dead Letter Queue (DLQ) Implementation for Failed Deliveries
 - [ ] Multi-channel support (SMS/Push)
-- [ ] Message Persistence & Status Tracking
 - [ ] Kubernetes deployment manifests

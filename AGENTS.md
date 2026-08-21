@@ -27,10 +27,11 @@ This repo is an event-driven messaging platform (Java / Spring Boot / Kafka). Pr
 | [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) | Run locally + provider env |
 | [docs/SECURITY.md](docs/SECURITY.md) | Secrets and auth boundaries |
 | [docs/ADR/](docs/ADR/) | Locked technical decisions |
-| [README.md](README.md) | Current Phase 0 runbook |
+| [README.md](README.md) | Current Phase 1 runbook |
+| [docs/phase2prompt.md](docs/phase2prompt.md) | Handoff prompt to start Phase 2 |
 
 ## Implementation hygiene
 
-- Prefer extending existing Gradle modules and Docker Compose patterns.
+- Prefer extending existing Gradle modules (`everdeliver-api`, `everdeliver-worker`, `everdeliver-common`, `everdeliver-persistence`) and Docker Compose patterns.
 - No secrets in git or logs.
 - Keep changes scoped to the active phase.

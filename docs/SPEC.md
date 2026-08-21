@@ -13,13 +13,14 @@ This document is the source of truth for **what** we are building and **when** a
 | Doc | Status | Role |
 |---|---|---|
 | [SPEC.md](SPEC.md) (this file) | Exists | Product phases, user stories, decision gates |
-| [README.md](../README.md) | Exists | How to run the current Phase 0 stack |
+| [README.md](../README.md) | Exists | How to run the current Phase 1 stack |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Exists | System diagram, modules, Kafka topics, ownership boundaries |
 | [ADR/](ADR/) | Exists | Short records of locked technical decisions |
 | [DATA_MODEL.md](DATA_MODEL.md) | Exists | Tables, statuses, campaign/template schema |
 | [LOCAL_SETUP.md](LOCAL_SETUP.md) | Exists | SendGrid / Twilio / Mailpit env setup |
 | [SECURITY.md](SECURITY.md) | Exists | Secrets handling for Integrations settings |
 | [AGENTS.md](../AGENTS.md) | Exists | Agent overview / workflow |
+| [phase2prompt.md](phase2prompt.md) | Exists | Handoff prompt for Phase 2 (DLQ & retries) |
 | `.cursor/rules/everdeliver-*.mdc` | Exists | Force AIs to stop at SPEC architecture checkboxes |
 
 Do not invent architecture in code without an ADR (or a checked decision in this SPEC).
@@ -121,12 +122,16 @@ Incoming Webhook URL and generic HTTPS POST, as before.
 
 ---
 
-## Current State (Phase 0 — Complete)
+## Current State (Phase 1 — Complete)
 
-- REST API accepts `POST /api/v1/notifications` with `{email, subject, message}`
-- Publishes to Kafka topic `notification-topic`
-- Worker consumes and sends email via SMTP (Mailpit)
-- Fully Dockerized (Kafka KRaft, Mailpit, API, Worker)
+- REST API accepts `POST /api/v1/notifications` with `{email, subject, message}` and returns `{ id, status: "QUEUED" }`
+- Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`
+- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=`
+- Publishes to Kafka topic `notification-topic` (payload includes `id`)
+- Worker consumes, updates status in DB directly, sends email via SMTP (Mailpit)
+- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, API, Worker)
+- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md)
+- Known limitation: no transactional outbox yet (deferred to Phase 2 with retry/DLQ)
 
 ---
 
@@ -143,19 +148,19 @@ Every notification gets a permanent record with lifecycle status updates.
 
 ### Architecture Decisions (MUST CONFIRM BEFORE IMPLEMENTING)
 
-- [ ] Database choice: PostgreSQL (recommended) vs H2 for dev?
-- [ ] ORM: Spring Data JPA (recommended) vs Spring JDBC?
-- [ ] Where does persistence live: in the API module, worker module, or a new shared persistence module?
-- [ ] Schema design: confirm table structure and indexes (include `channel`, `providerMessageId` for Twilio/SendGrid IDs)
-- [ ] Should the worker update status directly in DB, or publish a status event back to Kafka?
+- [x] Database choice: PostgreSQL (recommended) vs H2 for dev? → **PostgreSQL** ([ADR-0001](ADR/0001-phase1-persistence.md))
+- [x] ORM: Spring Data JPA (recommended) vs Spring JDBC? → **Spring Data JPA**
+- [x] Where does persistence live: in the API module, worker module, or a new shared persistence module? → **`everdeliver-persistence`**
+- [x] Schema design: confirm table structure and indexes (include `channel`, `providerMessageId` for Twilio/SendGrid IDs) → see [DATA_MODEL.md](DATA_MODEL.md) / ADR-0001
+- [x] Should the worker update status directly in DB, or publish a status event back to Kafka? → **Worker updates DB directly**
 
 ### Acceptance Criteria
 
-- POST response includes `{ id, status: "QUEUED" }`
-- Worker updates status to PROCESSING then SENT (or FAILED)
-- GET by ID returns current status and timestamps
-- GET list supports `?status=` and `?since=` query params
-- PostgreSQL runs in Docker Compose
+- [x] POST response includes `{ id, status: "QUEUED" }`
+- [x] Worker updates status to PROCESSING then SENT (or FAILED)
+- [x] GET by ID returns current status and timestamps
+- [x] GET list supports `?status=` and `?since=` query params (also `?limit=`)
+- [x] PostgreSQL runs in Docker Compose
 
 ---
 
