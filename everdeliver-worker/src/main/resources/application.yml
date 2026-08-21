@@ -2,6 +2,20 @@ server:
   port: 8082
 
 spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/everdeliver
+    username: everdeliver
+    password: everdeliver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: false
   kafka:
     bootstrap-servers: localhost:9092
     consumer:

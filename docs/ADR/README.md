@@ -19,7 +19,7 @@ Use an ADR when a checkbox in [SPEC.md](../SPEC.md) is confirmed, or when someth
 
 | ID | Title | Status |
 |---|---|---|
-| — | *(none yet)* | — |
+| [0001](0001-phase1-persistence.md) | Phase 1 Persistence & Status Tracking | Accepted |
 
 ## Rules for AIs
 

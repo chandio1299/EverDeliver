@@ -14,7 +14,7 @@ How to run the stack locally and (later) plug in **real** SendGrid + Twilio cred
 
 ---
 
-## Phase 0 — run everything (Mailpit only)
+## Phase 1 — run everything (Postgres + Mailpit)
 
 ```bash
 docker compose up --build
@@ -26,24 +26,47 @@ docker compose up --build
 | Worker | http://localhost:8082 |
 | Mailpit UI | http://localhost:8025 |
 | Kafka | localhost:9092 |
+| PostgreSQL | localhost:5432 |
+
+**Postgres (local Compose defaults — not for production):**
+
+| Env | Value |
+|---|---|
+| `POSTGRES_DB` | `everdeliver` |
+| `POSTGRES_USER` | `everdeliver` |
+| `POSTGRES_PASSWORD` | `everdeliver` |
+| JDBC (in Compose) | `jdbc:postgresql://postgres:5432/everdeliver` |
+| JDBC (host / bootRun) | `jdbc:postgresql://localhost:5432/everdeliver` |
 
 Smoke test:
 
 ```bash
-curl -X POST http://localhost:8081/api/v1/notifications \
+curl -s -X POST http://localhost:8081/api/v1/notifications \
   -H "Content-Type: application/json" \
   -d '{"email":"you@example.com","subject":"Hi","message":"Through Kafka"}'
+# expect {"id":"<uuid>","status":"QUEUED"}
+
+curl -s http://localhost:8081/api/v1/notifications/<id>
+curl -s 'http://localhost:8081/api/v1/notifications?status=SENT&limit=10'
 ```
 
-Check Mailpit for the message.
-
-Infra only:
+Check Mailpit for the message. Optional DB check:
 
 ```bash
-docker compose up kafka mailpit -d
+docker compose exec postgres psql -U everdeliver -c 'select id, status from notifications;'
+```
+
+Infra only (then bootRun API + worker):
+
+```bash
+docker compose up kafka mailpit postgres -d
 ./gradlew :everdeliver-api:bootRun
 ./gradlew :everdeliver-worker:bootRun
 ```
+
+### Known Phase 1 limitation (dual-write)
+
+The API writes `QUEUED` to Postgres, then publishes to Kafka (blocks on the send future). There is **no transactional outbox** yet. If Kafka publish fails after the insert, you may see a stuck `QUEUED` row and an HTTP 500. Outbox / retry / DLQ land in Phase 2 ([ADR-0001](ADR/0001-phase1-persistence.md)).
 
 ---
 

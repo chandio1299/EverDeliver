@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation project(':everdeliver-common')
+    implementation project(':everdeliver-persistence')
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.kafka:spring-kafka'
 }

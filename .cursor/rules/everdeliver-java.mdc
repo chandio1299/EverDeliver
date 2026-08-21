@@ -6,9 +6,9 @@ alwaysApply: false
 
 # EverDeliver — Java / Spring conventions
 
-- Multi-module Gradle: `everdeliver-api`, `everdeliver-worker`, `everdeliver-common`. Prefer extending these over new top-level apps unless SPEC/ADR says otherwise.
+- Multi-module Gradle: `everdeliver-api`, `everdeliver-worker`, `everdeliver-common`, `everdeliver-persistence`. Prefer extending these over new top-level apps unless SPEC/ADR says otherwise.
 - API enqueues; workers deliver to providers. Do not call SendGrid/Twilio from the dashboard frontend.
-- Shared DTOs live in `everdeliver-common`.
+- Shared DTOs live in `everdeliver-common`. Persistence (JPA entity, repository, Flyway) lives in `everdeliver-persistence`.
 - Config via `application.yml` + env overrides (Compose). Document new env vars in `docs/LOCAL_SETUP.md`.
 - Match existing style: Lombok where already used, constructor injection, simple REST controllers.
-- Before adding dependencies (JPA, Twilio SDK, SendGrid SDK), confirm via SPEC architecture checklist / ADR.
+- Before adding dependencies (Twilio SDK, SendGrid SDK, new Kafka topics), confirm via SPEC architecture checklist / ADR.

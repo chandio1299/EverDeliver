@@ -10,6 +10,7 @@ COPY settings.gradle .
 
 # Copy the modules (needed for multi-module dependencies)
 COPY everdeliver-common everdeliver-common
+COPY everdeliver-persistence everdeliver-persistence
 COPY everdeliver-worker everdeliver-worker
 
 # Build the specific module
