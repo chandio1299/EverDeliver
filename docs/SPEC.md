@@ -122,16 +122,17 @@ Incoming Webhook URL and generic HTTPS POST, as before.
 
 ---
 
-## Current State (Phase 1 — Complete)
+## Current State (Phase 2 — Complete)
 
 - REST API accepts `POST /api/v1/notifications` with `{email, subject, message}` and returns `{ id, status: "QUEUED" }`
-- Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`
-- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=`
+- Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`, with `FAILED → PROCESSING` retries then `DEAD`
+- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=` (includes `retryCount`, `lastError`)
 - Publishes to Kafka topic `notification-topic` (payload includes `id`)
 - Worker consumes, updates status in DB directly, sends email via SMTP (Mailpit)
+- Retryable failures go through `notification-topic-retry-5000|30000|120000`; exhausted/permanent failures land on `notification-topic-dlq` with status `DEAD`
 - Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, API, Worker)
-- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md)
-- Known limitation: no transactional outbox yet (deferred to Phase 2 with retry/DLQ)
+- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md)
+- Known limitation: no transactional outbox yet (API DB↔Kafka dual-write; still deferred)
 
 ---
 
@@ -177,11 +178,11 @@ Failed deliveries are retried with backoff. Permanently failed messages are capt
 
 ### Architecture Decisions (MUST CONFIRM BEFORE IMPLEMENTING)
 
-- [ ] Retry strategy: Kafka-native retry topics vs application-level retry with scheduled tasks?
-- [ ] Max retry count and backoff intervals
-- [ ] DLQ topic naming convention
-- [ ] Error storage: how much error detail to persist (stack trace vs message only)?
-- [ ] How to treat provider 4xx (bad address) vs 5xx/timeouts (retryable) for Twilio and SendGrid?
+- [x] Retry strategy: Kafka-native retry topics vs application-level retry with scheduled tasks? → **Kafka `@RetryableTopic`** ([ADR-0002](ADR/0002-phase2-retry-dlq.md))
+- [x] Max retry count and backoff intervals → **4 attempts (1 + 3 retries), 5s / 30s / 2m**
+- [x] DLQ topic naming convention → **`notification-topic-dlq`** (retry topics `notification-topic-retry-5000|30000|120000`)
+- [x] Error storage: how much error detail to persist (stack trace vs message only)? → **message only, truncated to 1024**
+- [x] How to treat provider 4xx (bad address) vs 5xx/timeouts (retryable) for Twilio and SendGrid? → **Phase 2 SMTP: connection/timeout retryable, invalid address permanent; Phase 3 HTTP: 4xx non-retryable, 5xx/timeout retryable**
 
 ### Acceptance Criteria
 

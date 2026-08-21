@@ -70,7 +70,7 @@ docker compose up kafka mailpit postgres -d
 ./gradlew :everdeliver-worker:bootRun
 ```
 
-## 🧪 Testing the Flow (Phase 1)
+## 🧪 Testing the Flow (Phase 1–2)
 
 ### Enqueue a notification
 
@@ -100,8 +100,12 @@ Open http://localhost:8025 — you should see the delivered email.
 ### Optional: inspect Postgres
 
 ```bash
-docker compose exec postgres psql -U everdeliver -c 'select id, status from notifications;'
+docker compose exec postgres psql -U everdeliver -c 'select id, status, retry_count, last_error from notifications;'
 ```
+
+### Phase 2 — retries & DLQ
+
+Retryable SMTP failures go through `notification-topic-retry-5000` (5s), `-retry-30000` (30s), `-retry-120000` (2m), then `notification-topic-dlq` with status `DEAD`. See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) for `EVERDELIVER_DELIVERY_SIMULATE_FAILURE`.
 
 ## 📦 Docker Architecture
 
@@ -128,6 +132,6 @@ External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI)
 - [x] Docker containerization with multi-stage builds
 - [x] KRaft mode Kafka (no Zookeeper)
 - [x] Message Persistence & Status Tracking (Phase 1)
-- [ ] Dead Letter Queue (DLQ) Implementation for Failed Deliveries
+- [x] Dead Letter Queue (DLQ) & retries for failed deliveries (Phase 2)
 - [ ] Multi-channel support (SMS/Push)
 - [ ] Kubernetes deployment manifests

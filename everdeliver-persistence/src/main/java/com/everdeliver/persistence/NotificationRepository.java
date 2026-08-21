@@ -57,4 +57,16 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("toStatus") NotificationStatus toStatus,
             @Param("lastError") String lastError,
             @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Notification n
+            set n.status = :toStatus, n.retryCount = n.retryCount + 1, n.updatedAt = :now
+            where n.id = :id and n.status = :fromStatus
+            """)
+    int claimRetryIfCurrent(
+            @Param("id") UUID id,
+            @Param("fromStatus") NotificationStatus fromStatus,
+            @Param("toStatus") NotificationStatus toStatus,
+            @Param("now") Instant now);
 }

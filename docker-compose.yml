@@ -69,6 +69,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/everdeliver
       SPRING_DATASOURCE_USERNAME: everdeliver
       SPRING_DATASOURCE_PASSWORD: everdeliver
+      EVERDELIVER_DELIVERY_SIMULATE_FAILURE: "false"
+      EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE: "false"
     depends_on:
       kafka:
         condition: service_started

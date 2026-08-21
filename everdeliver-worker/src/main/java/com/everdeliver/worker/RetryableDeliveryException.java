@@ -1,0 +1,15 @@
+package com.everdeliver.worker;
+
+/**
+ * Transient delivery failure — routed to the next Kafka retry topic.
+ */
+public class RetryableDeliveryException extends RuntimeException {
+
+    public RetryableDeliveryException(String message) {
+        super(message);
+    }
+
+    public RetryableDeliveryException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}

@@ -25,6 +25,11 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "com.everdeliver.common"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    listener:
+      idle-partition-event-interval: 1000ms
   mail:
     host: localhost
     port: 1025
@@ -34,3 +39,8 @@ spring:
           auth: false
           starttls:
             enable: false
+
+everdeliver:
+  delivery:
+    simulate-failure: false
+    simulate-permanent-failure: false
