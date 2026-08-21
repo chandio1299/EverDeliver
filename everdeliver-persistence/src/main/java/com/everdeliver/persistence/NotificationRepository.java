@@ -35,7 +35,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update Notification n
-            set n.status = :toStatus, n.sentAt = :sentAt, n.updatedAt = :now
+            set n.status = :toStatus, n.sentAt = :sentAt, n.providerMessageId = :providerMessageId, n.updatedAt = :now
             where n.id = :id and n.status = :fromStatus
             """)
     int markSentIfCurrent(
@@ -43,6 +43,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("fromStatus") NotificationStatus fromStatus,
             @Param("toStatus") NotificationStatus toStatus,
             @Param("sentAt") Instant sentAt,
+            @Param("providerMessageId") String providerMessageId,
             @Param("now") Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)

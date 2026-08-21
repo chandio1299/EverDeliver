@@ -84,4 +84,43 @@ class NotificationStatusServiceTest {
                 eq("x".repeat(1024)),
                 any(Instant.class));
     }
+
+    @Test
+    void markSentWritesProviderMessageId() {
+        UUID id = UUID.randomUUID();
+        when(notificationRepository.markSentIfCurrent(
+                        eq(id),
+                        eq(NotificationStatus.PROCESSING),
+                        eq(NotificationStatus.SENT),
+                        any(Instant.class),
+                        eq("SM123"),
+                        any(Instant.class)))
+                .thenReturn(1);
+
+        assertThat(statusService.markSent(id, "SM123")).isTrue();
+    }
+
+    @Test
+    void markSentTruncatesProviderMessageId() {
+        UUID id = UUID.randomUUID();
+        String tooLong = "p".repeat(300);
+        when(notificationRepository.markSentIfCurrent(
+                        eq(id),
+                        eq(NotificationStatus.PROCESSING),
+                        eq(NotificationStatus.SENT),
+                        any(Instant.class),
+                        any(String.class),
+                        any(Instant.class)))
+                .thenReturn(1);
+
+        statusService.markSent(id, tooLong);
+
+        verify(notificationRepository).markSentIfCurrent(
+                eq(id),
+                eq(NotificationStatus.PROCESSING),
+                eq(NotificationStatus.SENT),
+                any(Instant.class),
+                eq("p".repeat(255)),
+                any(Instant.class));
+    }
 }

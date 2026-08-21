@@ -44,3 +44,22 @@ everdeliver:
   delivery:
     simulate-failure: false
     simulate-permanent-failure: false
+  kafka:
+    attempts: 4
+    retry-delay-ms: 5000
+    retry-multiplier: 6.0
+    retry-max-delay-ms: 120000
+  providers:
+    sendgrid:
+      api-key: ${SENDGRID_API_KEY:}
+      from-email: ${SENDGRID_FROM_EMAIL:}
+      base-url: ${SENDGRID_BASE_URL:https://api.sendgrid.com}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      sms-from: ${TWILIO_SMS_FROM:}
+      whatsapp-from: ${TWILIO_WHATSAPP_FROM:}
+      base-url: ${TWILIO_BASE_URL:https://api.twilio.com}
+    http:
+      connect-timeout-seconds: 5
+      read-timeout-seconds: 15

@@ -1,6 +1,8 @@
 package com.everdeliver.worker;
 
 import com.everdeliver.common.NotificationRequest;
+import com.everdeliver.worker.delivery.ChannelSenderRegistry;
+import com.everdeliver.worker.delivery.DeliveryResult;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,8 +10,6 @@ import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
@@ -21,14 +21,17 @@ public class NotificationConsumer {
 
     static final String MAIN_TOPIC = "notification-topic";
 
-    private final JavaMailSender mailSender;
+    private final ChannelSenderRegistry channelSenderRegistry;
     private final NotificationStatusService notificationStatusService;
     private final DeliveryExceptionClassifier deliveryExceptionClassifier;
     private final DeliveryProperties deliveryProperties;
 
     @RetryableTopic(
-            attempts = "4",
-            backoff = @Backoff(delay = 5000, multiplier = 6.0, maxDelay = 120000),
+            attempts = "${everdeliver.kafka.attempts:4}",
+            backoff = @Backoff(
+                    delayExpression = "${everdeliver.kafka.retry-delay-ms:5000}",
+                    multiplierExpression = "${everdeliver.kafka.retry-multiplier:6.0}",
+                    maxDelayExpression = "${everdeliver.kafka.retry-max-delay-ms:120000}"),
             dltTopicSuffix = "-dlq",
             exclude = PermanentDeliveryException.class)
     @KafkaListener(topics = MAIN_TOPIC, groupId = "everdeliver-group")
@@ -49,24 +52,24 @@ public class NotificationConsumer {
         }
 
         try {
-            deliver(request);
-            if (!notificationStatusService.markSent(id)) {
+            DeliveryResult result = deliver(request);
+            if (!notificationStatusService.markSent(id, result.providerMessageId())) {
                 log.warn("Notification {} could not transition PROCESSING → SENT", id);
             } else {
-                log.info("Email successfully sent for notification {}", id);
+                log.info("Notification {} sent via {}", id, request.resolvedChannel().getValue());
             }
         } catch (PermanentDeliveryException | RetryableDeliveryException ex) {
             if (!notificationStatusService.markFailed(id, ex.getMessage())) {
                 log.warn("Notification {} could not transition PROCESSING → FAILED", id);
             }
-            log.error("Failed to send notification {}: {}", id, ex.getMessage());
+            log.error("Failed to send notification {}: {}", id, Redactor.redact(ex.getMessage()));
             throw ex;
         } catch (Exception ex) {
             RuntimeException classified = deliveryExceptionClassifier.classify(ex);
             if (!notificationStatusService.markFailed(id, classified.getMessage())) {
                 log.warn("Notification {} could not transition PROCESSING → FAILED", id);
             }
-            log.error("Failed to send notification {}: {}", id, classified.getMessage());
+            log.error("Failed to send notification {}: {}", id, Redactor.redact(classified.getMessage()));
             throw classified;
         }
     }
@@ -86,20 +89,14 @@ public class NotificationConsumer {
         }
     }
 
-    private void deliver(NotificationRequest request) {
+    private DeliveryResult deliver(NotificationRequest request) {
         if (deliveryProperties.isSimulatePermanentFailure()) {
             throw new PermanentDeliveryException("Simulated permanent provider failure");
         }
         if (deliveryProperties.isSimulateFailure()) {
             throw new RetryableDeliveryException("Simulated retryable provider failure");
         }
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom("noreply@everdeliver.com");
-        message.setTo(request.getEmail());
-        message.setSubject(request.getSubject());
-        message.setText(request.getMessage());
-        mailSender.send(message);
+        return channelSenderRegistry.require(request.resolvedChannel()).send(request);
     }
 
     static boolean isRetryTopic(String topic) {

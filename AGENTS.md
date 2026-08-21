@@ -27,8 +27,8 @@ This repo is an event-driven messaging platform (Java / Spring Boot / Kafka). Pr
 | [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) | Run locally + provider env |
 | [docs/SECURITY.md](docs/SECURITY.md) | Secrets and auth boundaries |
 | [docs/ADR/](docs/ADR/) | Locked technical decisions |
-| [README.md](README.md) | Current Phase 1 runbook |
-| [docs/phase2prompt.md](docs/phase2prompt.md) | Handoff prompt to start Phase 2 |
+| [README.md](README.md) | Current runbook |
+| [docs/phase3prompt.md](docs/phase3prompt.md) | Handoff prompt to start Phase 3 |
 
 ## Implementation hygiene
 

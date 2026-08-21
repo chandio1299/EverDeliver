@@ -13,18 +13,16 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class NotificationPersistenceService {
 
-    private static final String CHANNEL_EMAIL = "email";
-
     private final NotificationRepository notificationRepository;
 
     @Transactional
-    public Notification createQueued(String recipient, String subject, String body) {
+    public Notification createQueued(String channel, String recipient, String subject, String body) {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();
 
         Notification notification = Notification.builder()
                 .id(id)
-                .channel(CHANNEL_EMAIL)
+                .channel(channel)
                 .status(NotificationStatus.QUEUED)
                 .recipient(recipient)
                 .subject(subject)

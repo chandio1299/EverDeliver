@@ -8,34 +8,46 @@ Product *what* and *when* live in [SPEC.md](SPEC.md). Locked choices live in [AD
 
 ---
 
-## Current state (Phase 2)
+## Current state (Phase 3)
 
 ```text
-Client → everdeliver-api → PostgreSQL (QUEUED)
+Client → everdeliver-api → PostgreSQL (QUEUED, channel, recipient)
                 ↓
-         Kafka (notification-topic)
+         Kafka (notification-topic + channel header)
                 ↓
-         everdeliver-worker → SMTP (Mailpit)
+         everdeliver-worker → ChannelSender by channel
                 ↓
-         SENT | FAILED → retry-5000 → retry-30000 → retry-120000
+         email: SendGrid API (if key) | Mailpit SMTP (default)
+         sms / whatsapp: Twilio Messages API
+         slack: Incoming Webhook POST
+         webhook: generic HTTPS/HTTP POST
+                ↓
+         SENT (provider_message_id) | FAILED → retry-5000 → retry-30000 → retry-120000
                                               ↓ exhausted / permanent
                                     Kafka (notification-topic-dlq) → DEAD
 ```
 
 | Module | Role |
 |---|---|
-| `everdeliver-common` | Shared DTOs (Kafka / API request payload) |
+| `everdeliver-common` | Shared DTOs + `Channel` enum (Kafka / API request payload) |
 | `everdeliver-persistence` | JPA entity, repository, Flyway migrations |
-| `everdeliver-api` | REST producer (port 8081); owns schema migrations; inserts `QUEUED` |
-| `everdeliver-worker` | Kafka consumer + email send (port 8082); owns status after `QUEUED` (retries / `DEAD`) |
+| `everdeliver-api` | REST producer (port 8081); owns schema migrations; validates per channel; inserts `QUEUED` |
+| `everdeliver-worker` | Kafka consumer + channel senders (port 8082); owns status after `QUEUED` (retries / `DEAD`) |
 
-Infra (Docker Compose): Kafka (KRaft), PostgreSQL, Mailpit, API, Worker.
+Infra (Docker Compose): Kafka (KRaft), PostgreSQL, Mailpit, echo-server (local Slack/webhook target), API, Worker.
 
 **Write ownership**
 
 - API: create notification row (`QUEUED`), publish to Kafka (blocks on send future; no outbox yet — [ADR-0001](ADR/0001-phase1-persistence.md)).
-- Worker: conditional status transitions `QUEUED → PROCESSING → SENT|FAILED`; retries `FAILED → PROCESSING` (increment `retry_count`); DLT `FAILED → DEAD` ([ADR-0002](ADR/0002-phase2-retry-dlq.md)).
+- Worker: conditional status transitions `QUEUED → PROCESSING → SENT|FAILED`; retries `FAILED → PROCESSING` (increment `retry_count`); DLT `FAILED → DEAD` ([ADR-0002](ADR/0002-phase2-retry-dlq.md)). Persists `provider_message_id` on `SENT` ([ADR-0003](ADR/0003-phase3-multi-channel.md)).
 - Schema migrations: API only (`spring.flyway.enabled=false` on worker).
+- Provider credentials: worker env only. Never in Kafka payloads.
+
+**Locked Phase 3 topology** ([ADR-0003](ADR/0003-phase3-multi-channel.md))
+
+- Single topic `notification-topic` (not topic-per-channel)
+- One worker module with `ChannelSender` strategies
+- Retry/DLQ topic names unchanged from Phase 2
 
 ---
 
@@ -44,19 +56,19 @@ Infra (Docker Compose): Kafka (KRaft), PostgreSQL, Mailpit, API, Worker.
 ```text
 Dashboard / Scheduler / API clients
         ↓
-  everdeliver-api  →  Kafka (channel topics or routed topic)
+  everdeliver-api  →  Kafka (notification-topic)
         ↓
-  channel workers (email / sms / whatsapp / slack / webhook)
+  everdeliver-worker (channel strategies)
         ↓
   SendGrid | Twilio | Slack | HTTP | Mailpit
         ↓
   PostgreSQL (status, templates, campaigns, integrations)
 ```
 
-**TBD (confirm in SPEC Phase 2–3 before coding):**
+**TBD (confirm in later SPEC phases before coding):**
 
-- [ ] Topic-per-channel vs single topic + headers
-- [ ] One worker module vs many
+- [x] Topic-per-channel vs single topic + headers → single topic ([ADR-0003](ADR/0003-phase3-multi-channel.md))
+- [x] One worker module vs many → one module, strategies ([ADR-0003](ADR/0003-phase3-multi-channel.md))
 - [x] Which service writes notification status to DB → worker (Phase 1)
 - [ ] Where campaign scheduler runs (API process vs separate service)
 - [x] Retry / DLQ (Phase 2) — Kafka retry topics + `notification-topic-dlq`; outbox still deferred
@@ -74,4 +86,4 @@ Dashboard / Scheduler / API clients
 
 ## Diagrams
 
-See SPEC “How Delivery Actually Works” for the product-level flow. Phase 1 sequence is documented in [ADR-0001](ADR/0001-phase1-persistence.md). Retry/DLQ is [ADR-0002](ADR/0002-phase2-retry-dlq.md).
+See SPEC “How Delivery Actually Works” for the product-level flow. Phase 1 sequence is documented in [ADR-0001](ADR/0001-phase1-persistence.md). Retry/DLQ is [ADR-0002](ADR/0002-phase2-retry-dlq.md). Multi-channel is [ADR-0003](ADR/0003-phase3-multi-channel.md).

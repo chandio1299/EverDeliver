@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class NotificationStatusService {
 
+    static final int PROVIDER_MESSAGE_ID_MAX = 255;
+
     private final NotificationRepository notificationRepository;
 
     @Transactional
@@ -29,16 +31,22 @@ public class NotificationStatusService {
     }
 
     @Transactional
-    public boolean markSent(UUID id) {
+    public boolean markSent(UUID id, String providerMessageId) {
         Instant now = Instant.now();
         return notificationRepository.markSentIfCurrent(
-                id, NotificationStatus.PROCESSING, NotificationStatus.SENT, now, now) == 1;
+                id,
+                NotificationStatus.PROCESSING,
+                NotificationStatus.SENT,
+                now,
+                truncateProviderId(providerMessageId),
+                now)
+                == 1;
     }
 
     @Transactional
     public boolean markFailed(UUID id, String lastError) {
         Instant now = Instant.now();
-        String truncated = truncate(lastError);
+        String truncated = truncate(Redactor.redact(lastError));
         return notificationRepository.markFailedIfCurrent(
                 id, NotificationStatus.PROCESSING, NotificationStatus.FAILED, truncated, now) == 1;
     }
@@ -55,5 +63,15 @@ public class NotificationStatusService {
             return "Unknown error";
         }
         return error.length() <= 1024 ? error : error.substring(0, 1024);
+    }
+
+    static String truncateProviderId(String providerMessageId) {
+        if (providerMessageId == null || providerMessageId.isBlank()) {
+            return null;
+        }
+        String trimmed = providerMessageId.trim();
+        return trimmed.length() <= PROVIDER_MESSAGE_ID_MAX
+                ? trimmed
+                : trimmed.substring(0, PROVIDER_MESSAGE_ID_MAX);
     }
 }
