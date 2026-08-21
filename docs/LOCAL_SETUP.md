@@ -64,9 +64,60 @@ docker compose up kafka mailpit postgres -d
 ./gradlew :everdeliver-worker:bootRun
 ```
 
-### Known Phase 1 limitation (dual-write)
+### Known limitation (API dual-write)
 
-The API writes `QUEUED` to Postgres, then publishes to Kafka (blocks on the send future). There is **no transactional outbox** yet. If Kafka publish fails after the insert, you may see a stuck `QUEUED` row and an HTTP 500. Outbox / retry / DLQ land in Phase 2 ([ADR-0001](ADR/0001-phase1-persistence.md)).
+The API writes `QUEUED` to Postgres, then publishes to Kafka (blocks on the send future). There is **no transactional outbox**. If Kafka publish fails after the insert, you may see a stuck `QUEUED` row and an HTTP 500. Outbox remains deferred ([ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md)).
+
+---
+
+## Phase 2 — retries & DLQ
+
+Worker delivery failures are classified and routed by Spring Kafka `@RetryableTopic`:
+
+| Topic | Role |
+|---|---|
+| `notification-topic` | First attempt |
+| `notification-topic-retry-5000` | Retry after 5s |
+| `notification-topic-retry-30000` | Retry after 30s |
+| `notification-topic-retry-120000` | Retry after 2m |
+| `notification-topic-dlq` | Exhausted retries or permanent failure → DB status `DEAD` |
+
+Topics are created by the worker at startup (`KafkaAdmin` / `@RetryableTopic` auto-create). No Compose topic init is required.
+
+### Simulate a provider failure (acceptance)
+
+Rebuild/restart the worker with:
+
+```bash
+EVERDELIVER_DELIVERY_SIMULATE_FAILURE=true
+```
+
+In Compose, set that env under `everdeliver-worker` (the keys already exist, default `false`), then:
+
+```bash
+docker compose up --build -d everdeliver-worker
+
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"email":"fail@example.com","subject":"Retry","message":"Should go DEAD"}'
+
+# poll until DEAD (~2.5 minutes at production backoff)
+curl -s http://localhost:8081/api/v1/notifications/<id>
+# expect status=DEAD, retryCount=3, lastError set
+```
+
+Permanent-failure path (skips retries, `retryCount` stays 0):
+
+```bash
+EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE=true
+```
+
+Leave both flags **false** (default) for normal Mailpit delivery.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `EVERDELIVER_DELIVERY_SIMULATE_FAILURE` | `false` | Throw a retryable failure after claim |
+| `EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE` | `false` | Throw a permanent failure (straight to DLQ) |
 
 ---
 

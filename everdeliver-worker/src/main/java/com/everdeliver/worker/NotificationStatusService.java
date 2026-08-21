@@ -22,6 +22,13 @@ public class NotificationStatusService {
     }
 
     @Transactional
+    public boolean claimRetry(UUID id) {
+        Instant now = Instant.now();
+        return notificationRepository.claimRetryIfCurrent(
+                id, NotificationStatus.FAILED, NotificationStatus.PROCESSING, now) == 1;
+    }
+
+    @Transactional
     public boolean markSent(UUID id) {
         Instant now = Instant.now();
         return notificationRepository.markSentIfCurrent(
@@ -34,6 +41,13 @@ public class NotificationStatusService {
         String truncated = truncate(lastError);
         return notificationRepository.markFailedIfCurrent(
                 id, NotificationStatus.PROCESSING, NotificationStatus.FAILED, truncated, now) == 1;
+    }
+
+    @Transactional
+    public boolean markDead(UUID id) {
+        Instant now = Instant.now();
+        return notificationRepository.updateStatusIfCurrent(
+                id, NotificationStatus.FAILED, NotificationStatus.DEAD, now) == 1;
     }
 
     private static String truncate(String error) {
