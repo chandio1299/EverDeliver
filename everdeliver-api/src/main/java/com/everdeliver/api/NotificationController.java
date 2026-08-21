@@ -25,7 +25,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @PostMapping
-    @ResponseStatus(HttpStatus.OK)
+    @ResponseStatus(HttpStatus.ACCEPTED)
     public NotificationQueuedResponse sendNotification(@RequestBody NotificationRequest request) {
         return notificationService.enqueue(request);
     }
@@ -39,7 +39,10 @@ public class NotificationController {
     public List<NotificationResponse> listNotifications(
             @RequestParam(required = false) NotificationStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant since,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                    Instant updatedSince,
+            @RequestParam(required = false) String channel,
             @RequestParam(required = false) Integer limit) {
-        return notificationService.list(status, since, limit);
+        return notificationService.list(status, since, updatedSince, channel, limit);
     }
 }

@@ -103,4 +103,37 @@ class NotificationRequestValidatorTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("512");
     }
+
+    @Test
+    void rejectsOverlongSubjectAndMessage() {
+        NotificationRequest longSubject = new NotificationRequest();
+        longSubject.setEmail("user@example.com");
+        longSubject.setSubject("x".repeat(1025));
+        longSubject.setMessage("Hi");
+        assertThatThrownBy(() -> NotificationRequestValidator.validate(longSubject))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("subject exceeds");
+
+        NotificationRequest longMessage = new NotificationRequest();
+        longMessage.setEmail("user@example.com");
+        longMessage.setMessage("x".repeat(NotificationRequestValidator.MAX_MESSAGE_LENGTH + 1));
+        assertThatThrownBy(() -> NotificationRequestValidator.validate(longMessage))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("message exceeds");
+    }
+
+    @Test
+    void blockPrivateHostsRejectsLoopbackWhenEnabled() {
+        NotificationRequest request = new NotificationRequest();
+        request.setChannel(Channel.WEBHOOK);
+        request.setWebhookUrl("http://127.0.0.1/hook");
+        request.setMessage("Hi");
+
+        assertThat(NotificationRequestValidator.validate(request).recipient())
+                .startsWith("http://127.0.0.1");
+
+        assertThatThrownBy(() -> NotificationRequestValidator.validate(request, true))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("private or local");
+    }
 }

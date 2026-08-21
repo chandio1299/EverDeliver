@@ -41,7 +41,8 @@ public class SlackSender implements ChannelSender {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException ex) {
-            throw HttpStatusMapper.toDeliveryException(ex.getStatusCode().value(), ex.getResponseBodyAsString(), ex);
+            int status = ex.getStatusCode().value();
+            throw HttpStatusMapper.toDeliveryException(status, "from slack", ex);
         } catch (ResourceAccessException ex) {
             throw new RetryableDeliveryException(Redactor.redact(ex.getMessage()), ex);
         }

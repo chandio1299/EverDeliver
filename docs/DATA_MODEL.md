@@ -27,7 +27,7 @@ PostgreSQL table `notifications` (Flyway `V1__create_notifications.sql`). No Pha
 | `updated_at` | TIMESTAMPTZ | Updated on every change |
 | `sent_at` | TIMESTAMPTZ | Set when status becomes `SENT` |
 
-**Indexes:** `(created_at DESC)`, `(status, created_at DESC)`.
+**Indexes:** `(created_at DESC)`, `(status, created_at DESC)`, `(channel, created_at DESC)`, `(updated_at DESC)` (Flyway `V2__add_notification_indexes.sql`).
 
 **Not in Phase 1:** `campaign_id` (Phase 6).
 
@@ -67,6 +67,8 @@ QUEUED → PROCESSING → SENT
 ```
 
 Retry/DLQ semantics: [ADR-0002](ADR/0002-phase2-retry-dlq.md). Permanent failures skip retry topics and go straight to `notification-topic-dlq` / `DEAD` (`retry_count` stays 0).
+
+Stuck `PROCESSING`: if the worker dies after claiming `QUEUED`/`FAILED` → `PROCESSING` and before `SENT`/`FAILED`, Kafka redelivery cannot reclaim the row. A worker reaper (`everdeliver.delivery.processing-timeout`, default 5m) sets stale `PROCESSING` → `QUEUED` and republishes to `notification-topic`.
 
 ---
 

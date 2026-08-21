@@ -1,6 +1,6 @@
 # EverDeliver 🚀
 
-EverDeliver is a resilient, event-driven notification engine built with Java 21, Spring Boot, and Apache Kafka. The system is designed with a decoupled microservices architecture to ensure high availability and fault tolerance in message delivery.
+EverDeliver is a resilient, event-driven notification engine built with Java 17, Spring Boot, and Apache Kafka. The system is designed with a decoupled microservices architecture to ensure high availability and fault tolerance in message delivery.
 
 ## 🏗 Architecture Overview
 

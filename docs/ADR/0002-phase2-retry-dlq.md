@@ -43,6 +43,7 @@ The API dual-write gap (Postgres insert then Kafka publish, no outbox) was defer
 - At-least-once delivery can double-send if SMTP succeeded but the status write was lost. True send idempotency is Phase 7.
 - SMTP 4xx/5xx classification is heuristic (JavaMail exceptions, not HTTP status). Tighten in Phase 3.
 - Stuck `QUEUED` rows after a failed Kafka publish remain a known API limitation (no outbox).
+- The claim guard (`QUEUED`/`FAILED` → `PROCESSING` only) prevents double-send on Kafka redelivery, but a crash after claim and before `markSent`/`markFailed` can leave a row stuck in `PROCESSING` (redelivery skips the non-claimable record). A scheduled reaper requeues stale `PROCESSING` rows to `QUEUED` and republishes them.
 - Acceptance testing uses `everdeliver.delivery.simulate-failure` / `simulate-permanent-failure` (env-overridable; off by default). Full retry exhaustion takes ~2.5 minutes at production delays.
 
 ## References

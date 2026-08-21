@@ -38,6 +38,6 @@ class NotificationControllerTest {
         mockMvc.perform(post("/api/v1/notifications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"user@example.com\",\"subject\":\"Hi\",\"message\":\"Hello\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isAccepted());
     }
 }

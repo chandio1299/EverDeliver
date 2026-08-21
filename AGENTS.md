@@ -28,7 +28,7 @@ This repo is an event-driven messaging platform (Java / Spring Boot / Kafka). Pr
 | [docs/SECURITY.md](docs/SECURITY.md) | Secrets and auth boundaries |
 | [docs/ADR/](docs/ADR/) | Locked technical decisions |
 | [README.md](README.md) | Current runbook |
-| [docs/phase3prompt.md](docs/phase3prompt.md) | Handoff prompt to start Phase 3 |
+| [docs/phase4prompt.md](docs/phase4prompt.md) | Handoff prompt to start Phase 4 |
 
 ## Implementation hygiene
 

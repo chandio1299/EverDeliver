@@ -6,7 +6,8 @@ dependencies {
     implementation project(':everdeliver-common')
     implementation project(':everdeliver-persistence')
     implementation 'org.springframework.boot:spring-boot-starter-mail'
-    implementation 'org.springframework.boot:spring-boot-starter-web' // For Actuator/Health checks
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.kafka:spring-kafka'
     implementation 'org.springframework.retry:spring-retry'
     implementation 'com.sendgrid:sendgrid-java:4.10.3'

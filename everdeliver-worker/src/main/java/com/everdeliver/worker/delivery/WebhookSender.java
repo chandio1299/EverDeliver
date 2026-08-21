@@ -43,7 +43,8 @@ public class WebhookSender implements ChannelSender {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException ex) {
-            throw HttpStatusMapper.toDeliveryException(ex.getStatusCode().value(), ex.getResponseBodyAsString(), ex);
+            int status = ex.getStatusCode().value();
+            throw HttpStatusMapper.toDeliveryException(status, "from webhook", ex);
         } catch (ResourceAccessException ex) {
             throw new RetryableDeliveryException(Redactor.redact(ex.getMessage()), ex);
         }

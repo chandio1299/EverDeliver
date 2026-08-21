@@ -76,12 +76,4 @@ public class Notification {
     void onUpdate() {
         updatedAt = Instant.now();
     }
-
-    public void setLastErrorTruncated(String error) {
-        if (error == null) {
-            this.lastError = null;
-            return;
-        }
-        this.lastError = error.length() <= 1024 ? error : error.substring(0, 1024);
-    }
 }

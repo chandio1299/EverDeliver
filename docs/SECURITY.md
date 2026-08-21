@@ -12,12 +12,22 @@ Rules for handling credentials, auth, and safe defaults. Expand when Phase 5 (In
 2. **Never log** full secrets or Authorization headers.
 3. **Never return** full secrets from the API after save (mask: `sg••••••••abcd`).
 4. Prefer **server-side** provider calls (workers), not browser → SendGrid/Twilio directly.
+5. **Slack/webhook `recipient`** is a URL that may embed secrets. API GET responses mask it to `scheme://host/***`. The DB keeps the full URL for delivery.
+6. **Provider error bodies** are not persisted into `last_error` for Slack/webhook — only a short static reason (hostile targets can echo arbitrary content).
 
 ---
 
 ## Product model A (locked)
 
 Users log into **EverDeliver**, then paste provider keys in Settings. We do **not** implement Gmail OAuth for v1. See [SPEC.md](SPEC.md).
+
+---
+
+## Slack / webhook SSRF tradeoff
+
+By design, `slack` and `webhook` notifications POST to **caller-supplied** http(s) URLs (`requireHttpUrl` checks scheme + host only). That enables local Compose targets such as `http://echo-server/`.
+
+Optional guard: set `everdeliver.delivery.block-private-hosts=true` on the API. When enabled, hosts that resolve to loopback, link-local, site-local (RFC1918), multicast, or unspecified addresses are rejected with HTTP 400. **Default is `false`** so local/dev keeps working. Enabling it in shared or production deployments reduces SSRF risk against internal networks; it will break Docker-internal hostnames that resolve to private IPs.
 
 ---
 

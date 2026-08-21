@@ -3,22 +3,51 @@ package com.everdeliver.persistence;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface NotificationRepository extends JpaRepository<Notification, UUID> {
+public interface NotificationRepository
+        extends JpaRepository<Notification, UUID>, JpaSpecificationExecutor<Notification> {
 
-    List<Notification> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    List<Notification> findByStatusAndUpdatedAtBefore(NotificationStatus status, Instant cutoff);
 
-    List<Notification> findByStatusOrderByCreatedAtDesc(NotificationStatus status, Pageable pageable);
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Notification n
+            set n.status = :queued, n.updatedAt = :now
+            where n.status = :processing and n.updatedAt < :cutoff
+            """)
+    int requeueStaleProcessing(
+            @Param("cutoff") Instant cutoff,
+            @Param("now") Instant now,
+            @Param("queued") NotificationStatus queued,
+            @Param("processing") NotificationStatus processing);
 
-    List<Notification> findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(Instant since, Pageable pageable);
+    default int requeueStaleProcessing(Instant cutoff, Instant now) {
+        return requeueStaleProcessing(
+                cutoff, now, NotificationStatus.QUEUED, NotificationStatus.PROCESSING);
+    }
 
-    List<Notification> findByStatusAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
-            NotificationStatus status, Instant since, Pageable pageable);
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Notification n
+            set n.status = :queued, n.updatedAt = :now
+            where n.id = :id and n.status = :processing and n.updatedAt < :cutoff
+            """)
+    int requeueStaleProcessingById(
+            @Param("id") UUID id,
+            @Param("cutoff") Instant cutoff,
+            @Param("now") Instant now,
+            @Param("queued") NotificationStatus queued,
+            @Param("processing") NotificationStatus processing);
+
+    default int requeueStaleProcessingById(UUID id, Instant cutoff, Instant now) {
+        return requeueStaleProcessingById(
+                id, cutoff, now, NotificationStatus.QUEUED, NotificationStatus.PROCESSING);
+    }
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

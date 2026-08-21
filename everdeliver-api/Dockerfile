@@ -19,6 +19,9 @@ RUN ./gradlew :everdeliver-api:build -x test
 # Stage 2: Run the JAR
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/everdeliver-api/build/libs/*.jar app.jar
 
 EXPOSE 8081
