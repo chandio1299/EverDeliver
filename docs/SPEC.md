@@ -20,7 +20,7 @@ This document is the source of truth for **what** we are building and **when** a
 | [LOCAL_SETUP.md](LOCAL_SETUP.md) | Exists | SendGrid / Twilio / Mailpit env setup |
 | [SECURITY.md](SECURITY.md) | Exists | Secrets handling for Integrations settings |
 | [AGENTS.md](../AGENTS.md) | Exists | Agent overview / workflow |
-| [phase3prompt.md](phase3prompt.md) | Exists | Handoff prompt for Phase 3 (multi-channel) |
+| [phase4prompt.md](phase4prompt.md) | Exists | Handoff prompt for Phase 4 (dashboard) |
 | `.cursor/rules/everdeliver-*.mdc` | Exists | Force AIs to stop at SPEC architecture checkboxes |
 
 Do not invent architecture in code without an ADR (or a checked decision in this SPEC).
