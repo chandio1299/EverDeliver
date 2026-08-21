@@ -4,8 +4,8 @@ plugins {
 }
 
 dependencies {
-    // This module is just for POJOs/DTOs
     implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations'
 }
 
 bootJar { enabled = false }

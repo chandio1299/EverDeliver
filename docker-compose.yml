@@ -71,6 +71,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: everdeliver
       EVERDELIVER_DELIVERY_SIMULATE_FAILURE: "false"
       EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE: "false"
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_SMS_FROM: ${TWILIO_SMS_FROM:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
     depends_on:
       kafka:
         condition: service_started
@@ -78,6 +84,8 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      echo-server:
+        condition: service_started
 
   mailpit:
     image: axllent/mailpit:latest
@@ -85,6 +93,12 @@ services:
     ports:
       - "1025:1025"
       - "8025:8025"
+
+  echo-server:
+    image: ealen/echo-server:0.9.2
+    container_name: everdeliver-echo-1
+    ports:
+      - "8888:80"
 
 volumes:
   postgres_data:

@@ -21,6 +21,7 @@ Use an ADR when a checkbox in [SPEC.md](../SPEC.md) is confirmed, or when someth
 |---|---|---|
 | [0001](0001-phase1-persistence.md) | Phase 1 Persistence & Status Tracking | Accepted |
 | [0002](0002-phase2-retry-dlq.md) | Phase 2 Retry Topics & Dead Letter Queue | Accepted |
+| [0003](0003-phase3-multi-channel.md) | Phase 3 Multi-Channel Delivery | Accepted |
 
 ## Rules for AIs
 

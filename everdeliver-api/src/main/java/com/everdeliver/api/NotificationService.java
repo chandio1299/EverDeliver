@@ -1,14 +1,17 @@
 package com.everdeliver.api;
 
+import com.everdeliver.common.Channel;
 import com.everdeliver.common.NotificationRequest;
 import com.everdeliver.persistence.Notification;
 import com.everdeliver.persistence.NotificationRepository;
 import com.everdeliver.persistence.NotificationStatus;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -20,7 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class NotificationService {
 
-    private static final String TOPIC = "notification-topic";
+    static final String TOPIC = "notification-topic";
+    static final String CHANNEL_HEADER = "channel";
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 1000;
     private static final long KAFKA_SEND_TIMEOUT_SECONDS = 5;
@@ -30,27 +34,22 @@ public class NotificationService {
     private final KafkaTemplate<String, NotificationRequest> kafkaTemplate;
 
     public NotificationQueuedResponse enqueue(NotificationRequest request) {
-        if (request.getEmail() == null || request.getEmail().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email is required");
-        }
-        if (request.getMessage() == null || request.getMessage().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
-        }
+        NotificationRequestValidator.ResolvedNotification resolved = NotificationRequestValidator.validate(request);
 
         Notification notification = notificationPersistenceService.createQueued(
-                request.getEmail().trim(),
-                request.getSubject(),
-                request.getMessage());
+                resolved.channel().getValue(),
+                resolved.recipient(),
+                resolved.subject(),
+                resolved.message());
 
-        NotificationRequest kafkaPayload = new NotificationRequest(
-                notification.getId(),
-                notification.getRecipient(),
-                notification.getBody(),
-                notification.getSubject());
+        NotificationRequest kafkaPayload = toKafkaPayload(notification);
 
         try {
-            kafkaTemplate.send(TOPIC, notification.getId().toString(), kafkaPayload)
-                    .get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            ProducerRecord<String, NotificationRequest> record = new ProducerRecord<>(
+                    TOPIC, notification.getId().toString(), kafkaPayload);
+            record.headers()
+                    .add(CHANNEL_HEADER, resolved.channel().getValue().getBytes(StandardCharsets.UTF_8));
+            kafkaTemplate.send(record).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception ex) {
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -86,6 +85,19 @@ public class NotificationService {
         }
 
         return notifications.stream().map(this::toResponse).toList();
+    }
+
+    static NotificationRequest toKafkaPayload(Notification notification) {
+        NotificationRequest payload = new NotificationRequest();
+        payload.setId(notification.getId());
+        payload.setChannel(Channel.fromJson(notification.getChannel()));
+        payload.setRecipient(notification.getRecipient());
+        payload.setSubject(notification.getSubject());
+        payload.setMessage(notification.getBody());
+        if (payload.getChannel() == Channel.EMAIL) {
+            payload.setEmail(notification.getRecipient());
+        }
+        return payload;
     }
 
     private int normalizeLimit(Integer limit) {

@@ -2,19 +2,19 @@
 
 ## Purpose
 
-How to run the stack locally and (later) plug in **real** SendGrid + Twilio credentials. Expand as Phase 3/5 land.
+How to run the stack locally and plug in **real** SendGrid + Twilio credentials. Slack/webhook URLs are per-notification, not env.
 
 ---
 
 ## Prerequisites
 
 - Docker Desktop
-- Java 21 (for non-Docker `./gradlew bootRun`)
+- Java 17+ (for non-Docker `./gradlew bootRun`; Gradle `sourceCompatibility` is 17)
 - Optional: SendGrid account, Twilio account (trial is enough for testing)
 
 ---
 
-## Phase 1 — run everything (Postgres + Mailpit)
+## Run everything
 
 ```bash
 docker compose up --build
@@ -25,6 +25,7 @@ docker compose up --build
 | API | http://localhost:8081 |
 | Worker | http://localhost:8082 |
 | Mailpit UI | http://localhost:8025 |
+| Echo server (local Slack/webhook target) | http://localhost:8888 |
 | Kafka | localhost:9092 |
 | PostgreSQL | localhost:5432 |
 
@@ -38,7 +39,14 @@ docker compose up --build
 | JDBC (in Compose) | `jdbc:postgresql://postgres:5432/everdeliver` |
 | JDBC (host / bootRun) | `jdbc:postgresql://localhost:5432/everdeliver` |
 
-Smoke test:
+Automated smoke (email → Mailpit SENT, Slack/webhook → echo-server SENT, unconfigured SMS/WhatsApp → DEAD):
+
+```bash
+chmod +x scripts/smoke.sh
+./scripts/smoke.sh
+```
+
+Manual email smoke:
 
 ```bash
 curl -s -X POST http://localhost:8081/api/v1/notifications \
@@ -53,7 +61,7 @@ curl -s 'http://localhost:8081/api/v1/notifications?status=SENT&limit=10'
 Check Mailpit for the message. Optional DB check:
 
 ```bash
-docker compose exec postgres psql -U everdeliver -c 'select id, status from notifications;'
+docker compose exec postgres psql -U everdeliver -c 'select id, channel, status, provider_message_id, retry_count, last_error from notifications;'
 ```
 
 Infra only (then bootRun API + worker):
@@ -121,40 +129,92 @@ Leave both flags **false** (default) for normal Mailpit delivery.
 
 ---
 
-## Real email (SendGrid) — stub
+## Phase 3 — multi-channel (SendGrid / Twilio / Slack / webhook)
 
-**When configured (Phase 3+):** set env vars (names TBD / confirm in ADR):
+`POST /api/v1/notifications` accepts a flat body. `channel` defaults to `email`. Existing `{email, subject, message}` requests still work.
+
+| Channel | Required fields | Destination stored in `recipient` |
+|---|---|---|
+| `email` | `email`, `message` | email address |
+| `sms` / `whatsapp` | `phone` (E.164), `message` | phone |
+| `slack` | `slackWebhookUrl`, `message` | Incoming Webhook URL |
+| `webhook` | `webhookUrl`, `message` | callback URL |
+
+Provider credentials are **worker env only**. Copy `.env.example` → `.env` (gitignored). Compose interpolates `${SENDGRID_API_KEY:-}` from the host / `.env`.
+
+### Email — Mailpit (default) vs SendGrid
+
+Without `SENDGRID_API_KEY`, email still goes to Mailpit (http://localhost:8025).
+
+With a key:
+
+1. Create a SendGrid API key with Mail Send permission.
+2. Verify a sender (Single Sender or domain).
+3. Set:
 
 ```text
-SENDGRID_API_KEY=...
+SENDGRID_API_KEY=SG....
 SENDGRID_FROM_EMAIL=noreply@your-verified-domain.com
 ```
 
-Without these keys, email should keep using Mailpit.
+4. Recreate the worker: `docker compose up --build -d everdeliver-worker`
 
-Steps to flesh out later:
+```bash
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"email","email":"you@example.com","subject":"SendGrid","message":"Real inbox"}'
+# GET the id — expect SENT and providerMessageId set
+```
 
-1. Create SendGrid API key
-2. Verify sender / domain
-3. Pass env into Docker Compose worker/API as decided
+Failed SendGrid 4xx → `DEAD` immediately. 5xx/timeouts follow Phase 2 retry/DLQ.
 
----
-
-## Real SMS / WhatsApp (Twilio) — stub
+### SMS / WhatsApp — Twilio
 
 ```text
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_SMS_FROM=+1...
+TWILIO_ACCOUNT_SID=ACxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxx
+TWILIO_SMS_FROM=+1xxxxxxxxxx
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ```
 
-1. Twilio console → get SID/token
-2. Buy or use trial SMS number
-3. WhatsApp: join Twilio sandbox for dev
-4. Never commit these values
+1. Twilio console → Account SID + Auth Token.
+2. SMS: use a Twilio number (trial: verify the destination phone).
+3. WhatsApp: [join the Twilio sandbox](https://www.twilio.com/docs/whatsapp/sandbox) (send the join code to the sandbox number). v1 is **free-form sandbox only** — no template SID.
+4. Never commit these values. Empty Twilio env → SMS/WhatsApp fail permanently (`DEAD`, `retryCount=0`).
 
-Dashboard Integrations UI (Phase 5) will paste the same fields into encrypted storage — env remains the bootstrap path.
+```bash
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"sms","phone":"+15551234567","message":"Hello SMS"}'
+
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"whatsapp","phone":"+15551234567","message":"Hello WhatsApp"}'
+```
+
+### Slack Incoming Webhook
+
+Create an Incoming Webhook in Slack and POST the URL on the notification (not env):
+
+```bash
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"slack","slackWebhookUrl":"https://hooks.slack.com/services/...","message":"Hello Slack"}'
+```
+
+Local Compose smoke uses `http://echo-server/` (worker-internal DNS). From the host, the echo server is http://localhost:8888.
+
+### Generic webhook
+
+Worker POSTs `{id, channel, recipient, subject, message}`. 2xx = SENT; 408/429/5xx retry; other 4xx permanent.
+
+```bash
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"webhook","webhookUrl":"http://echo-server/","subject":"Hi","message":"Callback"}'
+```
+
+Dashboard Integrations UI (Phase 5) will paste SendGrid/Twilio fields into encrypted storage — env remains the bootstrap path.
 
 ---
 

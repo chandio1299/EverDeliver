@@ -7,22 +7,23 @@ EverDeliver is a resilient, event-driven notification engine built with Java 21,
 The project is structured as a Gradle Multi-Module project to maintain a clean separation of concerns:
 
 - **everdeliver-api** (Producer): A RESTful entry point that persists notifications as `QUEUED`, publishes them to Kafka, and serves status APIs.
-- **everdeliver-worker** (Consumer): A background service that consumes messages from Kafka, updates delivery status in Postgres, and sends email via SMTP.
+- **everdeliver-worker** (Consumer): Kafka consumer that updates delivery status and sends via SendGrid/Mailpit, Twilio, Slack Incoming Webhook, or generic HTTP.
 - **everdeliver-persistence**: Shared JPA entity, repository, and Flyway migrations.
-- **everdeliver-common**: Shared DTOs used by API and worker (Kafka payload).
-- **Infrastructure**: Docker Compose — Kafka (KRaft), PostgreSQL, Mailpit, API, Worker.
+- **everdeliver-common**: Shared DTOs + `Channel` enum (Kafka / API payload).
+- **Infrastructure**: Docker Compose — Kafka (KRaft), PostgreSQL, Mailpit, echo-server, API, Worker.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC.md](docs/SPEC.md).
 
 ## 🛠 Tech Stack
 
-- **Language**: Java 21
-- **Framework**: Spring Boot 3.x
+- **Language**: Java 17 (Gradle `sourceCompatibility`; Docker images use Temurin 21 JRE)
+- **Framework**: Spring Boot 3.3
 - **Build Tool**: Gradle (Wrapper)
 - **Messaging**: Apache Kafka (KRaft mode - no Zookeeper required)
 - **Database**: PostgreSQL 16 + Spring Data JPA + Flyway
 - **Infrastructure**: Docker & Docker Compose
-- **Testing/Mocking**: Mailpit (Mock SMTP Server)
+- **Providers**: SendGrid (email), Twilio (SMS/WhatsApp), Slack Incoming Webhook, generic HTTP webhook
+- **Local email**: Mailpit (used when `SENDGRID_API_KEY` is unset)
 - **Base Image**: Eclipse Temurin JDK/JRE 21
 
 ## 🚀 Quick Start with Docker
@@ -33,16 +34,22 @@ docker compose up --build
 
 This single command will:
 - Build `everdeliver-api` (Port 8081) and `everdeliver-worker` (Port 8082)
-- Start Kafka (Port 9092), PostgreSQL (Port 5432), Mailpit (Ports 1025 & 8025)
+- Start Kafka (Port 9092), PostgreSQL (Port 5432), Mailpit (Ports 1025 & 8025), echo-server (Port 8888)
 
 Wait for all services to be healthy (~2-3 minutes on first run).
+
+Automated smoke:
+
+```bash
+./scripts/smoke.sh
+```
 
 ## 🚦 Getting Started (Local Development)
 
 ### Prerequisites
 
-- Docker Desktop (for Kafka, Postgres & Mailpit)
-- Java 21 (managed via SDKMAN! recommended)
+- Docker Desktop (for Kafka, Postgres, Mailpit)
+- Java 17+ (Gradle compiles to 17)
 
 ### 1. Start Infrastructure Only
 
@@ -70,9 +77,9 @@ docker compose up kafka mailpit postgres -d
 ./gradlew :everdeliver-worker:bootRun
 ```
 
-## 🧪 Testing the Flow (Phase 1–2)
+## 🧪 Testing the Flow (Phase 3)
 
-### Enqueue a notification
+### Enqueue email (no SendGrid key → Mailpit)
 
 ```bash
 curl -s -X POST http://localhost:8081/api/v1/notifications \
@@ -84,7 +91,23 @@ curl -s -X POST http://localhost:8081/api/v1/notifications \
   }'
 ```
 
-Expect JSON like `{"id":"<uuid>","status":"QUEUED"}`.
+Expect JSON like `{"id":"<uuid>","status":"QUEUED"}`. Open http://localhost:8025 for the delivered email.
+
+### Other channels
+
+```bash
+# SMS / WhatsApp need TWILIO_* on the worker; without keys they go DEAD
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"sms","phone":"+15551234567","message":"Hello SMS"}'
+
+# Slack / webhook — Compose echo-server is reachable as http://echo-server/ from the worker
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"webhook","webhookUrl":"http://echo-server/","message":"Callback"}'
+```
+
+SendGrid + Twilio setup, retries, and env vars: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 ### Check status
 
@@ -93,19 +116,15 @@ curl -s http://localhost:8081/api/v1/notifications/<id>
 curl -s 'http://localhost:8081/api/v1/notifications?status=SENT&limit=10'
 ```
 
-### Verify via Mailpit
-
-Open http://localhost:8025 — you should see the delivered email.
-
 ### Optional: inspect Postgres
 
 ```bash
-docker compose exec postgres psql -U everdeliver -c 'select id, status, retry_count, last_error from notifications;'
+docker compose exec postgres psql -U everdeliver -c 'select id, channel, status, provider_message_id, retry_count, last_error from notifications;'
 ```
 
 ### Phase 2 — retries & DLQ
 
-Retryable SMTP failures go through `notification-topic-retry-5000` (5s), `-retry-30000` (30s), `-retry-120000` (2m), then `notification-topic-dlq` with status `DEAD`. See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) for `EVERDELIVER_DELIVERY_SIMULATE_FAILURE`.
+Retryable failures go through `notification-topic-retry-5000` (5s), `-retry-30000` (30s), `-retry-120000` (2m), then `notification-topic-dlq` with status `DEAD`. See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) for `EVERDELIVER_DELIVERY_SIMULATE_FAILURE`.
 
 ## 📦 Docker Architecture
 
@@ -122,8 +141,9 @@ Inside Docker, services communicate via container names:
 - **Kafka**: `kafka:29092`
 - **Postgres**: `postgres:5432`
 - **Mailpit**: `mailpit:1025`
+- **Echo server**: `echo-server:80` (host port 8888)
 
-External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI)
+External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI), 8888 (echo-server)
 
 ## 🛣 Roadmap
 
@@ -133,5 +153,5 @@ External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI)
 - [x] KRaft mode Kafka (no Zookeeper)
 - [x] Message Persistence & Status Tracking (Phase 1)
 - [x] Dead Letter Queue (DLQ) & retries for failed deliveries (Phase 2)
-- [ ] Multi-channel support (SMS/Push)
+- [x] Multi-channel support (email / SMS / WhatsApp / Slack / webhook)
 - [ ] Kubernetes deployment manifests

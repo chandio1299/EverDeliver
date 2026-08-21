@@ -6,7 +6,9 @@ import jakarta.mail.SendFailedException;
 import jakarta.mail.internet.AddressException;
 import java.net.ConnectException;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.mail.MailSendException;
+import org.springframework.web.client.RestClientResponseException;
 
 class DeliveryExceptionClassifierTest {
 
@@ -40,5 +42,22 @@ class DeliveryExceptionClassifierTest {
 
         assertThat(classified).isInstanceOf(RetryableDeliveryException.class);
         assertThat(classified.getMessage()).isEqualTo("boom");
+    }
+
+    @Test
+    void http400IsPermanent() {
+        RestClientResponseException ex = new RestClientResponseException(
+                "bad request", HttpStatusCode.valueOf(400), "Bad Request", null, null, null);
+        RuntimeException classified = classifier.classify(ex);
+        assertThat(classified).isInstanceOf(PermanentDeliveryException.class);
+        assertThat(classified.getMessage()).contains("HTTP 400");
+    }
+
+    @Test
+    void http503IsRetryable() {
+        RestClientResponseException ex = new RestClientResponseException(
+                "unavailable", HttpStatusCode.valueOf(503), "Service Unavailable", null, null, null);
+        RuntimeException classified = classifier.classify(ex);
+        assertThat(classified).isInstanceOf(RetryableDeliveryException.class);
     }
 }

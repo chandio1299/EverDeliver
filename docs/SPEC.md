@@ -20,7 +20,7 @@ This document is the source of truth for **what** we are building and **when** a
 | [LOCAL_SETUP.md](LOCAL_SETUP.md) | Exists | SendGrid / Twilio / Mailpit env setup |
 | [SECURITY.md](SECURITY.md) | Exists | Secrets handling for Integrations settings |
 | [AGENTS.md](../AGENTS.md) | Exists | Agent overview / workflow |
-| [phase2prompt.md](phase2prompt.md) | Exists | Handoff prompt for Phase 2 (DLQ & retries) |
+| [phase3prompt.md](phase3prompt.md) | Exists | Handoff prompt for Phase 3 (multi-channel) |
 | `.cursor/rules/everdeliver-*.mdc` | Exists | Force AIs to stop at SPEC architecture checkboxes |
 
 Do not invent architecture in code without an ADR (or a checked decision in this SPEC).
@@ -122,16 +122,16 @@ Incoming Webhook URL and generic HTTPS POST, as before.
 
 ---
 
-## Current State (Phase 2 — Complete)
+## Current State (Phase 3 — Complete)
 
-- REST API accepts `POST /api/v1/notifications` with `{email, subject, message}` and returns `{ id, status: "QUEUED" }`
+- REST API accepts `POST /api/v1/notifications` with a flat multi-channel body (`channel` defaults to `email`; `{email, subject, message}` still works) and returns `{ id, status: "QUEUED" }`
 - Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`, with `FAILED → PROCESSING` retries then `DEAD`
-- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=` (includes `retryCount`, `lastError`)
-- Publishes to Kafka topic `notification-topic` (payload includes `id`)
-- Worker consumes, updates status in DB directly, sends email via SMTP (Mailpit)
+- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=` (includes `retryCount`, `lastError`, `providerMessageId`)
+- Publishes to Kafka topic `notification-topic` (payload includes `id` + `channel` + `recipient`)
+- Worker consumes, updates status in DB directly, and delivers via channel senders: SendGrid or Mailpit (email), Twilio (SMS/WhatsApp), Slack Incoming Webhook, generic HTTP webhook
 - Retryable failures go through `notification-topic-retry-5000|30000|120000`; exhausted/permanent failures land on `notification-topic-dlq` with status `DEAD`
-- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, API, Worker)
-- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md)
+- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, echo-server, API, Worker)
+- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md), [ADR-0003](ADR/0003-phase3-multi-channel.md)
 - Known limitation: no transactional outbox yet (API DB↔Kafka dual-write; still deferred)
 
 ---
@@ -210,23 +210,23 @@ Real multi-channel delivery behind one API. Email uses SendGrid when configured,
 
 ### Architecture Decisions (MUST CONFIRM BEFORE IMPLEMENTING)
 
-- [ ] Routing: single Kafka topic + headers vs topic per channel?
-- [ ] Worker layout: modules vs strategy pattern in one worker?
-- [ ] API contract: polymorphic body vs flat optional fields?
-- [ ] Email transport switch: SendGrid Java SDK vs SMTP-to-SendGrid vs WebClient REST?
-- [ ] Twilio: official Java SDK vs WebClient?
-- [ ] Shared Twilio client for SMS + WhatsApp?
-- [ ] WhatsApp v1: free-form sandbox only vs also template SID + variables?
-- [ ] Slack Incoming Webhook for v1?
-- [ ] Credentials at this phase: env-only first, then Settings UI in Phase 5?
+- [x] Routing: single Kafka topic + headers vs topic per channel? → **keep `notification-topic` + `channel` field** ([ADR-0003](ADR/0003-phase3-multi-channel.md))
+- [x] Worker layout: modules vs strategy pattern in one worker? → **strategy pattern in `everdeliver-worker`**
+- [x] API contract: polymorphic body vs flat optional fields? → **flat body, backward compatible**
+- [x] Email transport switch: SendGrid Java SDK vs SMTP-to-SendGrid vs WebClient REST? → **SendGrid `Mail` builder + RestClient; Mailpit fallback**
+- [x] Twilio: official Java SDK vs WebClient? → **official Twilio Java SDK**
+- [x] Shared Twilio client for SMS + WhatsApp? → **yes — one client, two senders**
+- [x] WhatsApp v1: free-form sandbox only vs also template SID + variables? → **sandbox free-form only**
+- [x] Slack Incoming Webhook for v1? → **yes**
+- [x] Credentials at this phase: env-only first, then Settings UI in Phase 5? → **env-only**
 
 ### Acceptance Criteria
 
-- All five channels have a working delivery path
-- Without SendGrid key → email goes to Mailpit; with key → real email via SendGrid
-- Twilio SMS/WhatsApp work with documented sandbox/setup steps
-- Provider IDs persisted when available
-- README documents SendGrid + Twilio setup
+- [x] All five channels have a working delivery path
+- [x] Without SendGrid key → email goes to Mailpit; with key → real email via SendGrid
+- [x] Twilio SMS/WhatsApp work with documented sandbox/setup steps
+- [x] Provider IDs persisted when available
+- [x] README documents SendGrid + Twilio setup
 
 ---
 

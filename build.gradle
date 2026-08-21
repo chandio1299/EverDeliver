@@ -26,4 +26,8 @@ subprojects {
     java {
         sourceCompatibility = '17'
     }
+
+    tasks.named('test') {
+        useJUnitPlatform()
+    }
 }
