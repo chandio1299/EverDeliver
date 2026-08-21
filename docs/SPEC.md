@@ -124,13 +124,14 @@ Incoming Webhook URL and generic HTTPS POST, as before.
 
 ## Current State (Phase 3 — Complete)
 
-- REST API accepts `POST /api/v1/notifications` with a flat multi-channel body (`channel` defaults to `email`; `{email, subject, message}` still works) and returns `{ id, status: "QUEUED" }`
+- REST API accepts `POST /api/v1/notifications` with a flat multi-channel body (`channel` defaults to `email`; `{email, subject, message}` still works) and returns **HTTP 202** `{ id, status: "QUEUED" }`
 - Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`, with `FAILED → PROCESSING` retries then `DEAD`
-- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&limit=` (includes `retryCount`, `lastError`, `providerMessageId`)
+- `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&updatedSince=&channel=&limit=` (includes `retryCount`, `lastError`, `providerMessageId`; slack/webhook recipients masked)
 - Publishes to Kafka topic `notification-topic` (payload includes `id` + `channel` + `recipient`)
 - Worker consumes, updates status in DB directly, and delivers via channel senders: SendGrid or Mailpit (email), Twilio (SMS/WhatsApp), Slack Incoming Webhook, generic HTTP webhook
+- Stuck `PROCESSING` rows are requeued by a worker reaper after `everdeliver.delivery.processing-timeout` (default 5m)
 - Retryable failures go through `notification-topic-retry-5000|30000|120000`; exhausted/permanent failures land on `notification-topic-dlq` with status `DEAD`
-- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, echo-server, API, Worker)
+- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, echo-server, API, Worker) with `/actuator/health` checks
 - Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md), [ADR-0003](ADR/0003-phase3-multi-channel.md)
 - Known limitation: no transactional outbox yet (API DB↔Kafka dual-write; still deferred)
 

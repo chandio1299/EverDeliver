@@ -44,6 +44,8 @@ everdeliver:
   delivery:
     simulate-failure: false
     simulate-permanent-failure: false
+    processing-timeout: 5m
+    reaper-interval-ms: 30000
   kafka:
     attempts: 4
     retry-delay-ms: 5000
@@ -63,3 +65,9 @@ everdeliver:
     http:
       connect-timeout-seconds: 5
       read-timeout-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

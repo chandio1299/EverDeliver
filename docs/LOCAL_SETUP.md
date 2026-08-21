@@ -126,12 +126,14 @@ Leave both flags **false** (default) for normal Mailpit delivery.
 |---|---|---|
 | `EVERDELIVER_DELIVERY_SIMULATE_FAILURE` | `false` | Throw a retryable failure after claim |
 | `EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE` | `false` | Throw a permanent failure (straight to DLQ) |
+| `EVERDELIVER_DELIVERY_PROCESSING_TIMEOUT` | `5m` | Reaper: requeue `PROCESSING` older than this |
+| `EVERDELIVER_DELIVERY_REAPER_INTERVAL_MS` | `30000` | How often the reaper runs |
 
 ---
 
 ## Phase 3 — multi-channel (SendGrid / Twilio / Slack / webhook)
 
-`POST /api/v1/notifications` accepts a flat body. `channel` defaults to `email`. Existing `{email, subject, message}` requests still work.
+`POST /api/v1/notifications` accepts a flat body and returns **HTTP 202 Accepted** with `{id,status:QUEUED}`. `channel` defaults to `email`. Existing `{email, subject, message}` requests still work.
 
 | Channel | Required fields | Destination stored in `recipient` |
 |---|---|---|
@@ -139,6 +141,10 @@ Leave both flags **false** (default) for normal Mailpit delivery.
 | `sms` / `whatsapp` | `phone` (E.164), `message` | phone |
 | `slack` | `slackWebhookUrl`, `message` | Incoming Webhook URL |
 | `webhook` | `webhookUrl`, `message` | callback URL |
+
+List filters: `?status=&since=&updatedSince=&channel=&limit=`. Slack/webhook recipients are masked in GET responses (`scheme://host/***`).
+
+Optional API env: `EVERDELIVER_DELIVERY_BLOCK_PRIVATE_HOSTS=true` rejects private/loopback webhook targets (default `false` for local echo-server). See [SECURITY.md](SECURITY.md).
 
 Provider credentials are **worker env only**. Copy `.env.example` → `.env` (gitignored). Compose interpolates `${SENDGRID_API_KEY:-}` from the host / `.env`.
 

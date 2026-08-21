@@ -5,14 +5,15 @@ import com.everdeliver.common.NotificationRequest;
 import com.everdeliver.persistence.Notification;
 import com.everdeliver.persistence.NotificationRepository;
 import com.everdeliver.persistence.NotificationStatus;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class NotificationService {
 
     static final String TOPIC = "notification-topic";
-    static final String CHANNEL_HEADER = "channel";
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 1000;
     private static final long KAFKA_SEND_TIMEOUT_SECONDS = 5;
@@ -32,9 +32,11 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final NotificationPersistenceService notificationPersistenceService;
     private final KafkaTemplate<String, NotificationRequest> kafkaTemplate;
+    private final ApiDeliveryProperties deliveryProperties;
 
     public NotificationQueuedResponse enqueue(NotificationRequest request) {
-        NotificationRequestValidator.ResolvedNotification resolved = NotificationRequestValidator.validate(request);
+        NotificationRequestValidator.ResolvedNotification resolved =
+                NotificationRequestValidator.validate(request, deliveryProperties.isBlockPrivateHosts());
 
         Notification notification = notificationPersistenceService.createQueued(
                 resolved.channel().getValue(),
@@ -45,11 +47,9 @@ public class NotificationService {
         NotificationRequest kafkaPayload = toKafkaPayload(notification);
 
         try {
-            ProducerRecord<String, NotificationRequest> record = new ProducerRecord<>(
-                    TOPIC, notification.getId().toString(), kafkaPayload);
-            record.headers()
-                    .add(CHANNEL_HEADER, resolved.channel().getValue().getBytes(StandardCharsets.UTF_8));
-            kafkaTemplate.send(record).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            kafkaTemplate
+                    .send(TOPIC, notification.getId().toString(), kafkaPayload)
+                    .get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception ex) {
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -68,23 +68,23 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public List<NotificationResponse> list(NotificationStatus status, Instant since, Integer limit) {
+    public List<NotificationResponse> list(
+            NotificationStatus status,
+            Instant since,
+            Instant updatedSince,
+            String channel,
+            Integer limit) {
         int pageSize = normalizeLimit(limit);
-        var pageable = PageRequest.of(0, pageSize);
+        String normalizedChannel = normalizeChannel(channel);
+        Sort sort = updatedSince != null
+                ? Sort.by(Sort.Direction.DESC, "updatedAt")
+                : Sort.by(Sort.Direction.DESC, "createdAt");
+        var pageable = PageRequest.of(0, pageSize, sort);
 
-        List<Notification> notifications;
-        if (status != null && since != null) {
-            notifications = notificationRepository.findByStatusAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
-                    status, since, pageable);
-        } else if (status != null) {
-            notifications = notificationRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
-        } else if (since != null) {
-            notifications = notificationRepository.findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(since, pageable);
-        } else {
-            notifications = notificationRepository.findAllByOrderByCreatedAtDesc(pageable);
-        }
-
-        return notifications.stream().map(this::toResponse).toList();
+        Specification<Notification> spec = buildListSpec(status, since, updatedSince, normalizedChannel);
+        return notificationRepository.findAll(spec, pageable).stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     static NotificationRequest toKafkaPayload(Notification notification) {
@@ -100,6 +100,35 @@ public class NotificationService {
         return payload;
     }
 
+    private static Specification<Notification> buildListSpec(
+            NotificationStatus status, Instant since, Instant updatedSince, String channel) {
+        List<Specification<Notification>> parts = new ArrayList<>();
+        if (status != null) {
+            parts.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (since != null) {
+            parts.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), since));
+        }
+        if (updatedSince != null) {
+            parts.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("updatedAt"), updatedSince));
+        }
+        if (channel != null) {
+            parts.add((root, query, cb) -> cb.equal(root.get("channel"), channel));
+        }
+        return Specification.allOf(parts);
+    }
+
+    private static String normalizeChannel(String channel) {
+        if (channel == null || channel.isBlank()) {
+            return null;
+        }
+        try {
+            return Channel.fromJson(channel.trim()).getValue();
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "channel is invalid");
+        }
+    }
+
     private int normalizeLimit(Integer limit) {
         if (limit == null || limit <= 0) {
             return DEFAULT_LIMIT;
@@ -112,7 +141,7 @@ public class NotificationService {
                 .id(notification.getId())
                 .status(notification.getStatus())
                 .channel(notification.getChannel())
-                .recipient(notification.getRecipient())
+                .recipient(RecipientMasker.forResponse(notification.getChannel(), notification.getRecipient()))
                 .subject(notification.getSubject())
                 .body(notification.getBody())
                 .providerMessageId(notification.getProviderMessageId())

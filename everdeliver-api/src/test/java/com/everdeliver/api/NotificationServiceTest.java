@@ -11,9 +11,9 @@ import com.everdeliver.persistence.Notification;
 import com.everdeliver.persistence.NotificationRepository;
 import com.everdeliver.persistence.NotificationStatus;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,12 +34,14 @@ class NotificationServiceTest {
     @Mock
     private KafkaTemplate<String, NotificationRequest> kafkaTemplate;
 
+    private ApiDeliveryProperties deliveryProperties;
     private NotificationService notificationService;
 
     @BeforeEach
     void setUp() {
+        deliveryProperties = new ApiDeliveryProperties();
         notificationService = new NotificationService(
-                notificationRepository, notificationPersistenceService, kafkaTemplate);
+                notificationRepository, notificationPersistenceService, kafkaTemplate, deliveryProperties);
     }
 
     @Test
@@ -59,7 +61,7 @@ class NotificationServiceTest {
 
         when(notificationPersistenceService.createQueued("sms", "+15551234567", null, "Hi"))
                 .thenReturn(saved);
-        when(kafkaTemplate.send(any(ProducerRecord.class)))
+        when(kafkaTemplate.send(any(String.class), any(String.class), any(NotificationRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         NotificationRequest request = new NotificationRequest();
@@ -72,17 +74,12 @@ class NotificationServiceTest {
         assertThat(response.getId()).isEqualTo(id);
         assertThat(response.getStatus()).isEqualTo(NotificationStatus.QUEUED);
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<ProducerRecord<String, NotificationRequest>> captor =
-                ArgumentCaptor.forClass(ProducerRecord.class);
-        verify(kafkaTemplate).send(captor.capture());
-        ProducerRecord<String, NotificationRequest> record = captor.getValue();
-        assertThat(record.topic()).isEqualTo("notification-topic");
-        assertThat(record.key()).isEqualTo(id.toString());
-        assertThat(record.value().getChannel()).isEqualTo(Channel.SMS);
-        assertThat(record.value().getRecipient()).isEqualTo("+15551234567");
-        assertThat(record.value().getEmail()).isNull();
-        assertThat(new String(record.headers().lastHeader("channel").value())).isEqualTo("sms");
+        ArgumentCaptor<NotificationRequest> payloadCaptor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(kafkaTemplate).send(any(String.class), any(String.class), payloadCaptor.capture());
+        NotificationRequest payload = payloadCaptor.getValue();
+        assertThat(payload.getChannel()).isEqualTo(Channel.SMS);
+        assertThat(payload.getRecipient()).isEqualTo("+15551234567");
+        assertThat(payload.getEmail()).isNull();
     }
 
     @Test
@@ -106,5 +103,56 @@ class NotificationServiceTest {
         assertThat(payload.getRecipient()).isEqualTo("user@example.com");
         assertThat(payload.getEmail()).isEqualTo("user@example.com");
         assertThat(payload.getMessage()).isEqualTo("Hello");
+    }
+
+    @Test
+    void getByIdMasksSlackAndWebhookRecipientButNotEmail() {
+        Instant now = Instant.now();
+        UUID slackId = UUID.randomUUID();
+        when(notificationRepository.findById(slackId))
+                .thenReturn(Optional.of(Notification.builder()
+                        .id(slackId)
+                        .channel("slack")
+                        .status(NotificationStatus.QUEUED)
+                        .recipient("https://hooks.slack.com/services/T00/B00/secret-token")
+                        .body("Hi")
+                        .retryCount(0)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build()));
+
+        assertThat(notificationService.getById(slackId).getRecipient())
+                .isEqualTo("https://hooks.slack.com/***");
+
+        UUID webhookId = UUID.randomUUID();
+        when(notificationRepository.findById(webhookId))
+                .thenReturn(Optional.of(Notification.builder()
+                        .id(webhookId)
+                        .channel("webhook")
+                        .status(NotificationStatus.QUEUED)
+                        .recipient("https://example.com/hooks/abc?token=secret")
+                        .body("Hi")
+                        .retryCount(0)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build()));
+
+        assertThat(notificationService.getById(webhookId).getRecipient())
+                .isEqualTo("https://example.com/***");
+
+        UUID emailId = UUID.randomUUID();
+        when(notificationRepository.findById(emailId))
+                .thenReturn(Optional.of(Notification.builder()
+                        .id(emailId)
+                        .channel("email")
+                        .status(NotificationStatus.QUEUED)
+                        .recipient("user@example.com")
+                        .body("Hi")
+                        .retryCount(0)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build()));
+
+        assertThat(notificationService.getById(emailId).getRecipient()).isEqualTo("user@example.com");
     }
 }

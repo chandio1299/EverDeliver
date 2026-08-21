@@ -76,12 +76,17 @@ class SlackAndWebhookSenderTest {
                         + "\"message\":\"Body\""
                         + "}")));
 
-        wireMock.stubFor(post(urlEqualTo("/bad")).willReturn(aResponse().withStatus(404)));
+        wireMock.stubFor(post(urlEqualTo("/bad"))
+                .willReturn(aResponse().withStatus(404).withBody("secret-echo-body")));
         NotificationRequest bad = new NotificationRequest();
         bad.setId(UUID.randomUUID());
         bad.setRecipient(wireMock.baseUrl() + "/bad");
         bad.setMessage("nope");
-        assertThatThrownBy(() -> webhookSender.send(bad)).isInstanceOf(PermanentDeliveryException.class);
+        assertThatThrownBy(() -> webhookSender.send(bad))
+                .isInstanceOf(PermanentDeliveryException.class)
+                .hasMessageContaining("HTTP 404")
+                .hasMessageContaining("from webhook")
+                .hasMessageNotContaining("secret-echo-body");
     }
 
     @Test

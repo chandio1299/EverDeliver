@@ -58,6 +58,12 @@ public class NotificationStatusService {
                 id, NotificationStatus.FAILED, NotificationStatus.DEAD, now) == 1;
     }
 
+    @Transactional
+    public boolean requeueStaleProcessing(UUID id, Instant cutoff) {
+        Instant now = Instant.now();
+        return notificationRepository.requeueStaleProcessingById(id, cutoff, now) == 1;
+    }
+
     private static String truncate(String error) {
         if (error == null) {
             return "Unknown error";

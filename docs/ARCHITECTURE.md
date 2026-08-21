@@ -13,7 +13,7 @@ Product *what* and *when* live in [SPEC.md](SPEC.md). Locked choices live in [AD
 ```text
 Client → everdeliver-api → PostgreSQL (QUEUED, channel, recipient)
                 ↓
-         Kafka (notification-topic + channel header)
+         Kafka (notification-topic; payload includes channel)
                 ↓
          everdeliver-worker → ChannelSender by channel
                 ↓

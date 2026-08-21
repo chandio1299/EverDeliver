@@ -56,6 +56,13 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
 
   everdeliver-worker:
     build:
@@ -86,6 +93,13 @@ services:
         condition: service_healthy
       echo-server:
         condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
 
   mailpit:
     image: axllent/mailpit:latest
