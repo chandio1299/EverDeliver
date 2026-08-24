@@ -34,4 +34,9 @@ public class NotificationPersistenceService {
 
         return notificationRepository.save(notification);
     }
+
+    @Transactional
+    public boolean claimManualRetry(UUID id) {
+        return notificationRepository.claimManualRetry(id, Instant.now()) == 1;
+    }
 }

@@ -6,7 +6,7 @@ Define persistent entities, statuses, and relationships. Notification schema is 
 
 ---
 
-## Phase 1–3 (current)
+## Phase 1–4 (current)
 
 PostgreSQL table `notifications` (Flyway `V1__create_notifications.sql`). No Phase 3 migration — existing columns are reused ([ADR-0003](ADR/0003-phase3-multi-channel.md)).
 
@@ -22,7 +22,7 @@ PostgreSQL table `notifications` (Flyway `V1__create_notifications.sql`). No Pha
 | `body` | TEXT | From request `message` |
 | `provider_message_id` | VARCHAR(255) | Twilio SID / SendGrid `X-Message-Id` when the provider returns one; Mailpit leaves null |
 | `retry_count` | INT | Default 0; incremented atomically when a retry is claimed (`FAILED → PROCESSING`). First attempt is not a retry. |
-| `last_error` | VARCHAR(1024) | Set on `FAILED` (message only, truncated, redacted); retained when status becomes `DEAD` |
+| `last_error` | VARCHAR(1024) | Set on `FAILED` (message only, truncated, redacted); retained when status becomes `DEAD`; cleared on manual retry |
 | `created_at` | TIMESTAMPTZ | Set on insert |
 | `updated_at` | TIMESTAMPTZ | Updated on every change |
 | `sent_at` | TIMESTAMPTZ | Set when status becomes `SENT` |
@@ -64,9 +64,12 @@ QUEUED → PROCESSING → SENT
               ↘
                 FAILED → (retry claim) PROCESSING → SENT
                           ↘ (exhausted or permanent) → DEAD
+DEAD|FAILED → (manual retry, Phase 4) QUEUED → PROCESSING → …
 ```
 
 Retry/DLQ semantics: [ADR-0002](ADR/0002-phase2-retry-dlq.md). Permanent failures skip retry topics and go straight to `notification-topic-dlq` / `DEAD` (`retry_count` stays 0).
+
+Manual retry (dashboard / `POST /api/v1/notifications/{id}/retry`, [ADR-0004](ADR/0004-phase4-dashboard.md)): API atomically sets `FAILED` or `DEAD` → `QUEUED`, clears `last_error`, keeps `retry_count` as Kafka-attempt history, and republishes to `notification-topic`. Other statuses return 409. A manual retry may double-send (at-least-once).
 
 Stuck `PROCESSING`: if the worker dies after claiming `QUEUED`/`FAILED` → `PROCESSING` and before `SENT`/`FAILED`, Kafka redelivery cannot reclaim the row. A worker reaper (`everdeliver.delivery.processing-timeout`, default 5m) sets stale `PROCESSING` → `QUEUED` and republishes to `notification-topic`.
 
@@ -78,4 +81,5 @@ Stuck `PROCESSING`: if the worker dies after claiming `QUEUED`/`FAILED` → `PRO
 |---|---|
 | Schema migrations (Flyway) | `everdeliver-api` |
 | Insert `QUEUED` | `everdeliver-api` |
+| Manual retry `FAILED`/`DEAD` → `QUEUED` | `everdeliver-api` (then Kafka republish) |
 | Status after `QUEUED` | `everdeliver-worker` (direct DB updates) |

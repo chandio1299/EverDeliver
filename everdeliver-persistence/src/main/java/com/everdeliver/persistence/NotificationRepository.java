@@ -99,4 +99,75 @@ public interface NotificationRepository
             @Param("fromStatus") NotificationStatus fromStatus,
             @Param("toStatus") NotificationStatus toStatus,
             @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Notification n
+            set n.status = :queued, n.lastError = null, n.updatedAt = :now
+            where n.id = :id and n.status in (:failed, :dead)
+            """)
+    int claimManualRetry(
+            @Param("id") UUID id,
+            @Param("now") Instant now,
+            @Param("queued") NotificationStatus queued,
+            @Param("failed") NotificationStatus failed,
+            @Param("dead") NotificationStatus dead);
+
+    default int claimManualRetry(UUID id, Instant now) {
+        return claimManualRetry(
+                id, now, NotificationStatus.QUEUED, NotificationStatus.FAILED, NotificationStatus.DEAD);
+    }
+
+    @Query("""
+            select n.status, count(n)
+            from Notification n
+            where (:hasSince = false or n.createdAt >= :since)
+            group by n.status
+            """)
+    List<Object[]> countGroupedByStatus(@Param("hasSince") boolean hasSince, @Param("since") Instant since);
+
+    default List<Object[]> countGroupedByStatus(Instant since) {
+        return countGroupedByStatus(since != null, since);
+    }
+
+    @Query("""
+            select n.channel, count(n)
+            from Notification n
+            where (:hasSince = false or n.createdAt >= :since)
+            group by n.channel
+            """)
+    List<Object[]> countGroupedByChannel(@Param("hasSince") boolean hasSince, @Param("since") Instant since);
+
+    default List<Object[]> countGroupedByChannel(Instant since) {
+        return countGroupedByChannel(since != null, since);
+    }
+
+    @Query("""
+            select n.channel, count(n)
+            from Notification n
+            where n.status in (:failed, :dead)
+              and (:hasSince = false or n.createdAt >= :since)
+            group by n.channel
+            """)
+    List<Object[]> countFailuresGroupedByChannel(
+            @Param("hasSince") boolean hasSince,
+            @Param("since") Instant since,
+            @Param("failed") NotificationStatus failed,
+            @Param("dead") NotificationStatus dead);
+
+    default List<Object[]> countFailuresGroupedByChannel(Instant since) {
+        return countFailuresGroupedByChannel(
+                since != null, since, NotificationStatus.FAILED, NotificationStatus.DEAD);
+    }
+
+    @Query(
+            value = """
+                    SELECT AVG(EXTRACT(EPOCH FROM (sent_at - created_at)) * 1000)
+                    FROM notifications
+                    WHERE status = 'SENT'
+                      AND sent_at IS NOT NULL
+                      AND (CAST(:hasSince AS boolean) = false OR created_at >= CAST(:since AS timestamptz))
+                    """,
+            nativeQuery = true)
+    Double averageSentLatencyMs(@Param("hasSince") boolean hasSince, @Param("since") Instant since);
 }

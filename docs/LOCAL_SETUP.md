@@ -22,6 +22,7 @@ docker compose up --build
 
 | Service | URL / port |
 |---|---|
+| Dashboard | http://localhost:3000 |
 | API | http://localhost:8081 |
 | Worker | http://localhost:8082 |
 | Mailpit UI | http://localhost:8025 |
@@ -221,6 +222,61 @@ curl -s -X POST http://localhost:8081/api/v1/notifications \
 ```
 
 Dashboard Integrations UI (Phase 5) will paste SendGrid/Twilio fields into encrypted storage — env remains the bootstrap path.
+
+---
+
+## Phase 4 — delivery console
+
+Open http://localhost:3000 after `docker compose up --build`. The console polls the API every ~2s for the notification list and stats. Filter by channel, status, and time range (last hour / 24 hours / 7 days / all). Retry is shown only on `FAILED` and `DEAD` rows.
+
+This is an **open local console** (no login). Compose serves the UI on port 3000 and proxies `/api/` to the API. The dashboard never calls SendGrid, Twilio, or Slack.
+
+### Retry a failed or dead notification
+
+1. Force a permanent failure (or wait out retries):
+
+```bash
+# in Compose env for the worker, then recreate
+EVERDELIVER_DELIVERY_SIMULATE_PERMANENT_FAILURE=true
+```
+
+```bash
+docker compose up --build -d everdeliver-worker
+
+curl -s -X POST http://localhost:8081/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dead@example.com","subject":"Dead","message":"Should go DEAD"}'
+```
+
+2. Wait until GET shows `DEAD` (immediate for permanent failure).
+3. In the dashboard, click **Retry** on that row — or:
+
+```bash
+curl -s -X POST http://localhost:8081/api/v1/notifications/<id>/retry
+# expect status=QUEUED; retryCount unchanged; lastError cleared
+```
+
+4. Turn the simulate flag back to `false` and recreate the worker if you want the retry to reach `SENT` (Mailpit).
+
+Manual retry republishes to `notification-topic`. At-least-once delivery means a retry can double-send. `SENT`, `QUEUED`, and `PROCESSING` return HTTP 409.
+
+Stats (optional `since`):
+
+```bash
+curl -s 'http://localhost:8081/api/v1/notifications/stats'
+```
+
+### Frontend-only local dev
+
+With API already running on 8081:
+
+```bash
+cd everdeliver-dashboard
+npm install
+npm run dev
+```
+
+Vite serves http://localhost:3000 and proxies `/api` to http://localhost:8081. CORS allowlist: `everdeliver.api.cors-allowed-origins` (default `http://localhost:3000`).
 
 ---
 

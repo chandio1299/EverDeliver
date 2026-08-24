@@ -7,7 +7,9 @@ import com.everdeliver.persistence.NotificationRepository;
 import com.everdeliver.persistence.NotificationStatus;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
@@ -87,6 +89,74 @@ public class NotificationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public NotificationStatsResponse stats(Instant since) {
+        Map<String, Long> byStatus = zeroStatusCounts();
+        long total = 0;
+        for (Object[] row : notificationRepository.countGroupedByStatus(since)) {
+            NotificationStatus status = (NotificationStatus) row[0];
+            long count = ((Number) row[1]).longValue();
+            byStatus.put(status.name(), count);
+            total += count;
+        }
+
+        Map<String, Long> byChannel = zeroChannelCounts();
+        for (Object[] row : notificationRepository.countGroupedByChannel(since)) {
+            String channel = (String) row[0];
+            long count = ((Number) row[1]).longValue();
+            byChannel.merge(channel, count, Long::sum);
+        }
+
+        Map<String, Long> failuresByChannel = new LinkedHashMap<>();
+        for (Object[] row : notificationRepository.countFailuresGroupedByChannel(since)) {
+            String channel = (String) row[0];
+            long count = ((Number) row[1]).longValue();
+            failuresByChannel.merge(channel, count, Long::sum);
+        }
+
+        long sent = byStatus.getOrDefault(NotificationStatus.SENT.name(), 0L);
+        double successRate = total == 0 ? 0.0 : (double) sent / (double) total;
+        Double avgLatencyMs = notificationRepository.averageSentLatencyMs(
+                since != null, since != null ? since : Instant.EPOCH);
+
+        return NotificationStatsResponse.builder()
+                .since(since)
+                .total(total)
+                .byStatus(byStatus)
+                .byChannel(byChannel)
+                .successRate(successRate)
+                .avgLatencyMs(avgLatencyMs)
+                .failuresByChannel(failuresByChannel)
+                .build();
+    }
+
+    public NotificationResponse retry(UUID id) {
+        boolean claimed = notificationPersistenceService.claimManualRetry(id);
+        if (!claimed) {
+            if (!notificationRepository.existsById(id)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification not found");
+            }
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Notification cannot be retried unless FAILED or DEAD");
+        }
+
+        Notification notification = notificationRepository
+                .findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification not found"));
+
+        NotificationRequest kafkaPayload = toKafkaPayload(notification);
+        try {
+            kafkaTemplate
+                    .send(TOPIC, notification.getId().toString(), kafkaPayload)
+                    .get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, "Failed to publish notification to Kafka", ex);
+        }
+
+        return toResponse(notification);
+    }
+
     static NotificationRequest toKafkaPayload(Notification notification) {
         NotificationRequest payload = new NotificationRequest();
         payload.setId(notification.getId());
@@ -134,6 +204,22 @@ public class NotificationService {
             return DEFAULT_LIMIT;
         }
         return Math.min(limit, MAX_LIMIT);
+    }
+
+    private static Map<String, Long> zeroStatusCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (NotificationStatus status : NotificationStatus.values()) {
+            counts.put(status.name(), 0L);
+        }
+        return counts;
+    }
+
+    private static Map<String, Long> zeroChannelCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Channel channel : Channel.values()) {
+            counts.put(channel.getValue(), 0L);
+        }
+        return counts;
     }
 
     private NotificationResponse toResponse(Notification notification) {

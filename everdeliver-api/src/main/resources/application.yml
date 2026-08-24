@@ -31,3 +31,6 @@ management:
 everdeliver:
   delivery:
     block-private-hosts: false
+  api:
+    cors-allowed-origins:
+      - http://localhost:3000

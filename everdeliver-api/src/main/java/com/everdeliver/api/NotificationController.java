@@ -30,9 +30,20 @@ public class NotificationController {
         return notificationService.enqueue(request);
     }
 
+    @GetMapping("/stats")
+    public NotificationStatsResponse stats(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant since) {
+        return notificationService.stats(since);
+    }
+
     @GetMapping("/{id}")
     public NotificationResponse getNotification(@PathVariable UUID id) {
         return notificationService.getById(id);
+    }
+
+    @PostMapping("/{id}/retry")
+    public NotificationResponse retryNotification(@PathVariable UUID id) {
+        return notificationService.retry(id);
     }
 
     @GetMapping

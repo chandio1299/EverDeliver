@@ -32,6 +32,6 @@ This repo is an event-driven messaging platform (Java / Spring Boot / Kafka). Pr
 
 ## Implementation hygiene
 
-- Prefer extending existing Gradle modules (`everdeliver-api`, `everdeliver-worker`, `everdeliver-common`, `everdeliver-persistence`) and Docker Compose patterns.
+- Prefer extending existing Gradle modules (`everdeliver-api`, `everdeliver-worker`, `everdeliver-common`, `everdeliver-persistence`) and Docker Compose patterns. The Phase 4 UI lives in `everdeliver-dashboard` (npm, not Gradle).
 - No secrets in git or logs.
 - Keep changes scoped to the active phase.

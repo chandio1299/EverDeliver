@@ -6,11 +6,12 @@ EverDeliver is a resilient, event-driven notification engine built with Java 17,
 
 The project is structured as a Gradle Multi-Module project to maintain a clean separation of concerns:
 
-- **everdeliver-api** (Producer): A RESTful entry point that persists notifications as `QUEUED`, publishes them to Kafka, and serves status APIs.
+- **everdeliver-api** (Producer): A RESTful entry point that persists notifications as `QUEUED`, publishes them to Kafka, and serves status, stats, and manual retry APIs.
 - **everdeliver-worker** (Consumer): Kafka consumer that updates delivery status and sends via SendGrid/Mailpit, Twilio, Slack Incoming Webhook, or generic HTTP.
 - **everdeliver-persistence**: Shared JPA entity, repository, and Flyway migrations.
 - **everdeliver-common**: Shared DTOs + `Channel` enum (Kafka / API payload).
-- **Infrastructure**: Docker Compose — Kafka (KRaft), PostgreSQL, Mailpit, echo-server, API, Worker.
+- **everdeliver-dashboard**: Operator console (React + Vite) that polls the API. Never calls providers.
+- **Infrastructure**: Docker Compose — Kafka (KRaft), PostgreSQL, Mailpit, echo-server, API, Worker, Dashboard.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC.md](docs/SPEC.md).
 
@@ -33,10 +34,10 @@ docker compose up --build
 ```
 
 This single command will:
-- Build `everdeliver-api` (Port 8081) and `everdeliver-worker` (Port 8082)
+- Build `everdeliver-api` (Port 8081), `everdeliver-worker` (Port 8082), and `everdeliver-dashboard` (Port 3000)
 - Start Kafka (Port 9092), PostgreSQL (Port 5432), Mailpit (Ports 1025 & 8025), echo-server (Port 8888)
 
-Wait for all services to be healthy (~2-3 minutes on first run).
+Wait for all services to be healthy (~2-3 minutes on first run). Open the delivery console at http://localhost:3000.
 
 Automated smoke:
 
@@ -114,7 +115,10 @@ SendGrid + Twilio setup, retries, and env vars: [docs/LOCAL_SETUP.md](docs/LOCAL
 ```bash
 curl -s http://localhost:8081/api/v1/notifications/<id>
 curl -s 'http://localhost:8081/api/v1/notifications?status=SENT&limit=10'
+curl -s 'http://localhost:8081/api/v1/notifications/stats'
 ```
+
+Or watch the same row on the delivery console: http://localhost:3000 (filters + live poll + Retry on `FAILED`/`DEAD`). Setup detail: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 ### Optional: inspect Postgres
 
@@ -130,10 +134,7 @@ Retryable failures go through `notification-topic-retry-5000` (5s), `-retry-3000
 
 ### Multi-Stage Builds
 
-Each service uses a two-stage Dockerfile:
-
-1. **Build Stage**: `eclipse-temurin:21-jdk` compiles the Gradle project
-2. **Runtime Stage**: `eclipse-temurin:21-jre` runs the packaged JAR
+Each Java service uses a two-stage Dockerfile (`eclipse-temurin:21-jdk` → JRE). The dashboard uses Node to build the Vite app, then `nginx:alpine` to serve it and proxy `/api/` to the API.
 
 ### Service Communication
 
@@ -154,4 +155,5 @@ External access (localhost): 9092 (Kafka), 5432 (Postgres), 8025 (Mailpit UI), 8
 - [x] Message Persistence & Status Tracking (Phase 1)
 - [x] Dead Letter Queue (DLQ) & retries for failed deliveries (Phase 2)
 - [x] Multi-channel support (email / SMS / WhatsApp / Slack / webhook)
+- [x] Delivery console (live feed, stats, manual retry)
 - [ ] Kubernetes deployment manifests
