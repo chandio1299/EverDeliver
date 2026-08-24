@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #2563eb;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .skeleton {
+    @apply relative overflow-hidden bg-soft;
+  }
+
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 1.4s ease infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      display: none;
+    }
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

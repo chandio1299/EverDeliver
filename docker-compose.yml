@@ -101,6 +101,17 @@ services:
       retries: 10
       start_period: 90s
 
+  everdeliver-dashboard:
+    build:
+      context: ./everdeliver-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      everdeliver-api:
+        condition: service_healthy
+    restart: unless-stopped
+
   mailpit:
     image: axllent/mailpit:latest
     container_name: everdeliver-mailpit-1

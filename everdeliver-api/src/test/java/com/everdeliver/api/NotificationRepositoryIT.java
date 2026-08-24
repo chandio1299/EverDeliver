@@ -68,4 +68,84 @@ class NotificationRepositoryIT {
         assertThat(loaded.getProviderMessageId()).isEqualTo("sg-msg-1");
         assertThat(loaded.getSentAt()).isNotNull();
     }
+
+    @Test
+    void claimManualRetryMovesFailedToQueuedAndClearsLastError() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.now();
+        notificationRepository.save(Notification.builder()
+                .id(id)
+                .channel("email")
+                .status(NotificationStatus.FAILED)
+                .recipient("user@example.com")
+                .body("Hello")
+                .retryCount(2)
+                .lastError("timeout")
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
+
+        int updated = notificationRepository.claimManualRetry(id, now.plusSeconds(1));
+
+        assertThat(updated).isEqualTo(1);
+        Notification loaded = notificationRepository.findById(id).orElseThrow();
+        assertThat(loaded.getStatus()).isEqualTo(NotificationStatus.QUEUED);
+        assertThat(loaded.getLastError()).isNull();
+        assertThat(loaded.getRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void claimManualRetryLeavesSentUnchanged() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.now();
+        notificationRepository.save(Notification.builder()
+                .id(id)
+                .channel("email")
+                .status(NotificationStatus.SENT)
+                .recipient("user@example.com")
+                .body("Hello")
+                .retryCount(0)
+                .createdAt(now)
+                .updatedAt(now)
+                .sentAt(now)
+                .build());
+
+        assertThat(notificationRepository.claimManualRetry(id, now.plusSeconds(1))).isZero();
+        assertThat(notificationRepository.findById(id).orElseThrow().getStatus())
+                .isEqualTo(NotificationStatus.SENT);
+    }
+
+    @Test
+    void statsQueriesCountAndLatency() {
+        Instant t0 = Instant.parse("2026-08-21T10:00:00Z");
+        Instant t1 = Instant.parse("2026-08-21T10:00:01Z");
+        notificationRepository.save(Notification.builder()
+                .id(UUID.randomUUID())
+                .channel("email")
+                .status(NotificationStatus.SENT)
+                .recipient("a@example.com")
+                .body("Hello")
+                .retryCount(0)
+                .createdAt(t0)
+                .updatedAt(t1)
+                .sentAt(t1)
+                .build());
+        notificationRepository.save(Notification.builder()
+                .id(UUID.randomUUID())
+                .channel("sms")
+                .status(NotificationStatus.DEAD)
+                .recipient("+15551234567")
+                .body("Hello")
+                .retryCount(0)
+                .lastError("no twilio")
+                .createdAt(t0)
+                .updatedAt(t1)
+                .build());
+
+        assertThat(notificationRepository.countGroupedByStatus(null)).isNotEmpty();
+        assertThat(notificationRepository.countFailuresGroupedByChannel(null)).isNotEmpty();
+        Double latency = notificationRepository.averageSentLatencyMs(false, Instant.EPOCH);
+        assertThat(latency).isNotNull();
+        assertThat(latency).isGreaterThanOrEqualTo(0);
+    }
 }

@@ -122,18 +122,22 @@ Incoming Webhook URL and generic HTTPS POST, as before.
 
 ---
 
-## Current State (Phase 3 — Complete)
+## Current State (Phase 4 — Complete)
 
 - REST API accepts `POST /api/v1/notifications` with a flat multi-channel body (`channel` defaults to `email`; `{email, subject, message}` still works) and returns **HTTP 202** `{ id, status: "QUEUED" }`
 - Notifications persisted in PostgreSQL (`everdeliver-persistence` + Flyway); status lifecycle `QUEUED → PROCESSING → SENT|FAILED`, with `FAILED → PROCESSING` retries then `DEAD`
 - `GET /api/v1/notifications/{id}` and `GET /api/v1/notifications?status=&since=&updatedSince=&channel=&limit=` (includes `retryCount`, `lastError`, `providerMessageId`; slack/webhook recipients masked)
+- `GET /api/v1/notifications/stats?since=` aggregates counts, success rate, SENT latency, and failures by channel in PostgreSQL
+- `POST /api/v1/notifications/{id}/retry` requeues `FAILED`/`DEAD` to `QUEUED` and republishes to Kafka (409 otherwise)
 - Publishes to Kafka topic `notification-topic` (payload includes `id` + `channel` + `recipient`)
 - Worker consumes, updates status in DB directly, and delivers via channel senders: SendGrid or Mailpit (email), Twilio (SMS/WhatsApp), Slack Incoming Webhook, generic HTTP webhook
 - Stuck `PROCESSING` rows are requeued by a worker reaper after `everdeliver.delivery.processing-timeout` (default 5m)
 - Retryable failures go through `notification-topic-retry-5000|30000|120000`; exhausted/permanent failures land on `notification-topic-dlq` with status `DEAD`
-- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, echo-server, API, Worker) with `/actuator/health` checks
-- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md), [ADR-0003](ADR/0003-phase3-multi-channel.md)
+- Delivery console (`everdeliver-dashboard`) on port 3000 polls the API; no login (Phase 5)
+- Fully Dockerized (Kafka KRaft, PostgreSQL, Mailpit, echo-server, API, Worker, Dashboard) with `/actuator/health` checks
+- Locked decisions: [ADR-0001](ADR/0001-phase1-persistence.md), [ADR-0002](ADR/0002-phase2-retry-dlq.md), [ADR-0003](ADR/0003-phase3-multi-channel.md), [ADR-0004](ADR/0004-phase4-dashboard.md)
 - Known limitation: no transactional outbox yet (API DB↔Kafka dual-write; still deferred)
+- Known limitation: dashboard is an unauthenticated local operator console
 
 ---
 
@@ -245,17 +249,17 @@ Web UI for live notification feed, filters, stats, and manual retry.
 
 ### Architecture Decisions (MUST CONFIRM BEFORE IMPLEMENTING)
 
-- [ ] Frontend: React (Vite) vs Next.js vs Thymeleaf?
-- [ ] Real-time: SSE vs WebSocket vs polling?
-- [ ] Hosting: separate container vs served from API?
-- [ ] Charting library?
-- [ ] CSS approach: Tailwind vs component library?
+- [x] Frontend: React (Vite) vs Next.js vs Thymeleaf? → **React + Vite** (`everdeliver-dashboard`) ([ADR-0004](ADR/0004-phase4-dashboard.md))
+- [x] Real-time: SSE vs WebSocket vs polling? → **~2s polling** of list + stats
+- [x] Hosting: separate container vs served from API? → **separate Compose service on port 3000** (nginx + `/api` proxy)
+- [x] Charting library? → **Recharts** (compact supporting visuals only)
+- [x] CSS approach: Tailwind vs component library? → **Tailwind + locally owned shadcn-style primitives**; Impeccable Operate mode
 
 ### Acceptance Criteria
 
-- Dashboard runs on a configured port
-- Live/updated notification list + stats
-- Retry action works
+- [x] Dashboard runs on a configured port
+- [x] Live/updated notification list + stats
+- [x] Retry action works
 
 ---
 

@@ -31,6 +31,16 @@ Optional guard: set `everdeliver.delivery.block-private-hosts=true` on the API. 
 
 ---
 
+## Dashboard (Phase 4)
+
+The delivery console is an **unauthenticated local operator console**. Do not expose port 3000 on a public network until Phase 5 login exists.
+
+- The browser talks only to `everdeliver-api`. It never calls SendGrid, Twilio, or Slack.
+- Compose nginx proxies `/api/` same-origin to the API. Vite `npm run dev` calls the API cross-origin; the API allowlists `http://localhost:3000` via `everdeliver.api.cors-allowed-origins`.
+- Slack/webhook recipients remain masked on list/detail/retry responses.
+
+---
+
 ## Planned areas (stub — decide before coding)
 
 | Topic | Options to confirm |
@@ -40,7 +50,7 @@ Optional guard: set `everdeliver.delivery.block-private-hosts=true` on the API. 
 | Secret storage | Encrypt-at-rest in Postgres vs env-only vs vault |
 | Encryption key | Env `ENCRYPTION_KEY` / KMS — TBD |
 | Kafka payloads | Store `userId`/`workspaceId` and look up creds; avoid embedding tokens in messages |
-| CORS | Dashboard origin allowlist |
+| CORS | Dashboard origin allowlist (`everdeliver.api.cors-allowed-origins`, default `http://localhost:3000`) — [ADR-0004](ADR/0004-phase4-dashboard.md) |
 
 ---
 
